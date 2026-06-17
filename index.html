@@ -188,9 +188,19 @@
       }
 
       showStatus('📡 Запрашиваю коды ошибок (DTC)...', 'sending');
-      // Mode 03 = Request stored DTCs (коды ошибок)
-      rawResult = await sendCommand('03');
-      log(`Ответ ЭБУ: <span class="ok">${rawResult.replace(/\r/g, ' ')}</span>`);
+      
+      // 1. Запрашиваем сохраненные ошибки (Mode 03)
+      log('Запрос сохраненных ошибок (03)...');
+      const res03 = await sendCommand('03');
+      log(`Ответ 03: <span class="ok">${res03.replace(/\r/g, ' ')}</span>`);
+
+      // 2. Запрашиваем ожидающие ошибки (Mode 07)
+      log('Запрос ожидающих ошибок (07)...');
+      const res07 = await sendCommand('07');
+      log(`Ответ 07: <span class="ok">${res07.replace(/\r/g, ' ')}</span>`);
+
+      // 3. Склеиваем оба ответа для отправки в n8n
+      rawResult = `MODE_03: ${res03} | MODE_07: ${res07}`;
 
       document.getElementById('sendBtn').disabled = false;
       showStatus('✅ Данные получены! Нажми "Отправить результат"', 'sent');
