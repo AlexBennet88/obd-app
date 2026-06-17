@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBD Диагностика</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f; --surface: #13131a; --border: #22222e;
+      --accent: #3b82f6; --accent2: #60a5fa;
+      --green: #4ade80; --yellow: #facc15; --red: #f87171;
+      --text: #f0f0f4; --muted: #6b7280;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; display: flex;
+      flex-direction: column; align-items: center;
+      justify-content: center; padding: 20px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 32px 28px;
+      max-width: 400px; width: 100%;
+      box-shadow: 0 0 40px rgba(59,130,246,0.08);
+    }
+    .header { text-align: center; margin-bottom: 24px; }
+    .icon { font-size: 48px; margin-bottom: 12px; display: block; }
+    h1 { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 6px; }
+    .subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .chat-tag {
+      display: inline-block; font-size: 11px; padding: 4px 10px;
+      border-radius: 8px; margin-top: 10px;
+      background: rgba(59,130,246,0.12); color: var(--accent2);
+      border: 1px solid rgba(59,130,246,0.25);
+    }
+    .btn {
+      display: block; width: 100%; padding: 14px; border: none;
+      border-radius: 12px; font-family: 'Inter', sans-serif;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: all 0.2s ease; margin-bottom: 10px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: white; box-shadow: 0 4px 20px rgba(59,130,246,0.3);
+    }
+    .btn-primary:hover { transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-send {
+      background: transparent; border: 1px solid var(--green);
+      color: var(--green);
+    }
+    .btn-send:hover { background: rgba(74,222,128,0.08); }
+    .btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .status { margin: 14px 0; font-size: 13px; padding: 10px 14px; border-radius: 10px; display: none; }
+    .status.visible { display: block; }
+    .status.sending { background: rgba(59,130,246,0.12); color: var(--accent2); }
+    .status.sent    { background: rgba(74,222,128,0.12); color: var(--green); }
+    .status.error   { background: rgba(248,113,113,0.12); color: var(--red); }
+    .status.info    { background: rgba(250,204,21,0.10); color: var(--yellow); }
+
+    .divider { height: 1px; background: var(--border); margin: 18px 0; }
+    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 160px; overflow-y: auto; }
+    .log span { color: var(--accent2); }
+    .log .err { color: var(--red); }
+    .log .ok { color: var(--green); }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="icon">🚗</span>
+    <h1>OBD Диагностика</h1>
+    <p class="subtitle">Подключись к адаптеру для проверки ошибок двигателя</p>
+    <div class="chat-tag" id="chatTag">chat_id: —</div>
+  </div>
+
+  <button class="btn btn-primary" id="connectBtn" onclick="connectOBD()">🔌 Подключиться к OBD</button>
+  <button class="btn btn-send" id="sendBtn" onclick="sendToTelegram()" disabled>📤 Отправить результат в Telegram</button>
+
+  <div class="status" id="status"></div>
+  <div class="divider"></div>
+  <div class="log" id="log">Готов к подключению...</div>
+</div>
+
+<script>
+  const N8N_WEBHOOK_URL = 'https://unlisted-corner-proclaim.ngrok-free.dev/webhook/obd-receiver';
+
+  // Получаем chat_id из URL: ?chat_id=12345
+  const urlParams = new URLSearchParams(window.location.search);
+  const chatId = urlParams.get('chat_id') || '';
+  document.getElementById('chatTag').textContent = 'chat_id: ' + (chatId || '⚠️ не передан');
+
+  // 3 популярных UUID-профиля для ELM327 BLE адаптеров
+  const OBD_PROFILES = [
+    { name: 'Type A (fff0)', service: '0000fff0-0000-1000-8000-00805f9b34fb', notify: '0000fff1-0000-1000-8000-00805f9b34fb', write: '0000fff2-0000-1000-8000-00805f9b34fb' },
+    { name: 'Type B (18f0)', service: '000018f0-0000-1000-8000-00805f9b34fb', notify: '00002af0-0000-1000-8000-00805f9b34fb', write: '00002af1-0000-1000-8000-00805f9b34fb' },
+    { name: 'Type C (Vgate)', service: 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', notify: 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f', write: 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f' }
+  ];
+
+  let rawResult = '';
+  let writeChar = null;
+  let notifyChar = null;
+  let responseBuffer = '';
+  let pendingResolve = null;
+
+  function log(msg, type = '') {
+    const el = document.getElementById('log');
+    const time = new Date().toLocaleTimeString('ru');
+    el.innerHTML += `<br><span>[${time}]</span> <span class="${type}">${msg}</span>`;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = `status visible ${type}`;
+  }
+
+  function sendCommand(cmd) {
+    return new Promise((resolve) => {
+      responseBuffer = '';
+      pendingResolve = resolve;
+      const data = new TextEncoder().encode(cmd + '\r');
+      writeChar.writeValue(data);
+      setTimeout(() => { if (pendingResolve) { pendingResolve(responseBuffer); pendingResolve = null; } }, 2500);
+    });
+  }
+
+  async function tryProfile(device, profile) {
+    log(`Пробую профиль: ${profile.name}`);
+    try {
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(profile.service);
+      writeChar = await service.getCharacteristic(profile.write);
+      notifyChar = await service.getCharacteristic(profile.notify);
+
+      await notifyChar.startNotifications();
+      notifyChar.addEventListener('characteristicvaluechanged', (e) => {
+        const text = new TextDecoder().decode(e.target.value);
+        responseBuffer += text;
+        if (responseBuffer.includes('>') && pendingResolve) {
+          pendingResolve(responseBuffer);
+          pendingResolve = null;
+        }
+      });
+
+      log('Подключено! Инициализирую ELM327...', 'ok');
+      await sendCommand('AT Z');
+      await sendCommand('AT E0');
+      await sendCommand('AT SP 0');
+      return true;
+    } catch (e) {
+      log(`Не подошёл: ${e.message}`, 'err');
+      try { device.gatt.disconnect(); } catch (_) {}
+      return false;
+    }
+  }
+
+  async function connectOBD() {
+    const btn = document.getElementById('connectBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Поиск...';
+    log('Запрашиваю Bluetooth устройство...');
+
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: OBD_PROFILES.map(p => p.service)
+      });
+      log(`Устройство: <span class="ok">${device.name || 'Без имени'}</span>`);
+      showStatus('🔄 Подключаюсь...', 'info');
+
+      let connected = false;
+      for (const profile of OBD_PROFILES) {
+        connected = await tryProfile(device, profile);
+        if (connected) { log(`✅ Профиль найден: ${profile.name}`, 'ok'); break; }
+      }
+
+      if (!connected) {
+        showStatus('❌ Ни один профиль не подошёл', 'error');
+        btn.textContent = '🔌 Подключиться к OBD';
+        btn.disabled = false;
+        return;
+      }
+
+      showStatus('📡 Запрашиваю коды ошибок (DTC)...', 'sending');
+      // Mode 03 = Request stored DTCs (коды ошибок)
+      rawResult = await sendCommand('03');
+      log(`Ответ ЭБУ: <span class="ok">${rawResult.replace(/\r/g, ' ')}</span>`);
+
+      document.getElementById('sendBtn').disabled = false;
+      showStatus('✅ Данные получены! Нажми "Отправить результат"', 'sent');
+
+    } catch (err) {
+      log(`Ошибка: ${err.message}`, 'err');
+      showStatus('❌ ' + err.message, 'error');
+    }
+
+    btn.textContent = '🔌 Переподключиться';
+    btn.disabled = false;
+  }
+
+  async function sendToTelegram() {
+    if (!chatId) {
+      showStatus('❌ Нет chat_id — открой ссылку из Telegram бота', 'error');
+      return;
+    }
+    const btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+    showStatus('📡 Отправляю в n8n...', 'sending');
+    try {
+      const res = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw: rawResult,
+          chat_id: chatId,
+          timestamp: new Date().toISOString()
+        })
+      });
+      if (res.ok) {
+        showStatus('✅ Отправлено! Проверяй Telegram', 'sent');
+        log('Данные отправлены на n8n', 'ok');
+      } else throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      log(`Ошибка отправки: ${err.message}`, 'err');
+    }
+    btn.disabled = false;
+  }
+</script>
+</body>
+</html>
