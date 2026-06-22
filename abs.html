@@ -146,11 +146,10 @@
         }
       });
 
-      log('Связь установлена. Настройка ELM под ABS...', 'ok');
+      log('Связь установлена. Базовая настройка ELM...', 'ok');
       await sendCommand('AT Z');    // Сброс ELM
       await sendCommand('AT E0');   // Отключаем эхо
-      await sendCommand('AT H1');   // Включаем заголовки ответов (критично для n8n!)
-      await sendCommand('AT SP 6'); // Принудительно ISO 15765-4 CAN (11bit 500kbaud) - стандарт Scenic 2
+      await sendCommand('AT H1');   // Включаем заголовки ответов (критично для парсинга)
       return true;
     } catch (e) {
       log(`Профиль мимо: ${e.message}`, 'err');
@@ -187,21 +186,68 @@
       }
 
       showStatus('📡 Открытие диагностической сессии ABS...', 'sending');
-      
-      // Настраиваем отправку на физический адрес блока ABS Renault
-      log('Установка CAN заголовка блока ABS (AT SH 740)...');
-      await sendCommand('AT SH 740');
+      let absResponse = '';
 
-      // Чтение DTC кодов Renault (Запрос 18 02 FF)
-      log('Отправка дилерского запроса кодов ошибок (18 02 FF)...');
-      rawResult = await sendCommand('18 02 FF');
-      log(`Сырой ответ блока ABS: <span class="ok">${rawResult.replace(/\r/g, ' ')}</span>`);
+      // --- ШАГ 1: Попытка опроса через CAN-шину ---
+      log('Попытка 1: Настройка под CAN-шину (AT SP 6)...');
+      await sendCommand('AT SP 6');  // Принудительно ISO 15765-4 CAN (11bit 500kbaud)
+      await sendCommand('AT SH 740'); // Установка CAN заголовка ABS Renault
 
-      // Возвращаем ELM в дефолтный режим на всякий случай
+      log('Отправка запроса ошибок по CAN (18 02 FF)...');
+      let checkCAN = await sendCommand('18 02 FF');
+      log(`Ответ по CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
+
+      if (checkCAN.includes('58 02') || checkCAN.includes('7F 18')) {
+        absResponse = checkCAN;
+        log('Блок успешно ответил по CAN-шине!', 'ok');
+      } 
+      // --- ШАГ 2: Если CAN выдал NO DATA или ошибку инициализации, прыгаем на K-Line ---
+      else if (checkCAN.includes('NO DATA') || checkCAN.includes('?') || checkCAN.includes('ERROR') || checkCAN.trim() === '>') {
+        log('⚠️ CAN молчит. Переключаемся на K-Line (7 пин ОБД)...', 'info');
+        
+        await sendCommand('AT Z'); // Очищаем чип
+        await sendCommand('AT E0');
+        await sendCommand('AT H1');
+        
+        log('Установка протокола K-Line (AT SP 5)...');
+        await sendCommand('AT SP 5'); // KWP2000 (5 Baud Init) — стандарт для старых блоков Renault
+        
+        // Задаем заголовки K-line: 81 (Формат/Физ.запрос), 7B (Адрес ABS Renault), F1 (Адрес Тестера)
+        await sendCommand('AT WM 81 7B F1'); 
+        
+        log('Инициализация K-Line сессии (Команда 81)...');
+        let initKLine = await sendCommand('81');
+        log(`Ответ на инициализацию: ${initKLine.replace(/\r/g, ' ')}`);
+        
+        log('Отправка запроса ошибок по K-Line (18 02 FF)...');
+        let checkKLine = await sendCommand('18 02 FF');
+        log(`Ответ по K-Line: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
+        
+        if (checkKLine.includes('58 02') || checkKLine.includes('7F 18') || (!checkKLine.includes('NO DATA') && checkKLine.length > 5)) {
+          absResponse = checkKLine;
+          log('Блок успешно ответил по K-Line!', 'ok');
+        } else {
+          // Запасной альтернативный адрес ABS (иногда идет как F0)
+          log('Пробуем альтернативный адрес K-Line (F0)...');
+          await sendCommand('AT WM 81 F0 F1');
+          await sendCommand('81');
+          absResponse = await sendCommand('18 02 FF');
+        }
+      }
+
+      rawResult = absResponse || checkCAN;
+
+      // Возвращаем ELM в дефолтный режим автоматического поиска протокола
       await sendCommand('AT AR');
 
+      if (rawResult.includes('NO DATA') || rawResult.trim() === '>') {
+        showStatus('❌ Блок ABS не ответил ни по CAN, ни по K-Line', 'error');
+      } else {
+        showStatus('✅ Данные ABS успешно считаны!', 'sent');
+      }
+      
+      // Кнопку отправки делаем активной в любом случае, чтобы можно было слать логи для анализа
       document.getElementById('sendBtn').disabled = false;
-      showStatus('✅ Данные ABS успешно считаны!', 'sent');
 
     } catch (err) {
       log(`Ошибка: ${err.message}`, 'err');
