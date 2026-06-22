@@ -83,7 +83,7 @@
 
   <div class="status" id="status"></div>
   <div class="divider"></div>
-  <div class="log" id="log">Убедитесь, что включено полное зажигание (зажата кнопка Старт 5 сек)...</div>
+  <div class="log" id="log">Вставьте карту и нажмите кнопку Старт (двигатель не заводить)...</div>
 </div>
 
 <script>
@@ -193,6 +193,11 @@
       await sendCommand('AT SP 6');  // Принудительно ISO 15765-4 CAN (11bit 500kbaud)
       await sendCommand('AT SH 740'); // Установка CAN заголовка ABS Renault
 
+      // ХИТРОСТЬ: Активируем расширенную сессию для обхода блокировки 7F 18
+      log('Запрос расширенной диагностической сессии по CAN (10 C0)...');
+      let sessionCAN = await sendCommand('10 C0');
+      log(`Ответ на сессию CAN: <span class="info">${sessionCAN.replace(/\r/g, ' ')}</span>`);
+
       log('Отправка запроса ошибок по CAN (18 02 FF)...');
       let checkCAN = await sendCommand('18 02 FF');
       log(`Ответ по CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
@@ -218,6 +223,11 @@
         log('Инициализация K-Line сессии (Команда 81)...');
         let initKLine = await sendCommand('81');
         log(`Ответ на инициализацию: ${initKLine.replace(/\r/g, ' ')}`);
+
+        // ХИТРОСТЬ: Активируем расширенную сессию и на К-Линии
+        log('Запрос расширенной диагностической сессии по K-Line (10 C0)...');
+        let sessionKLine = await sendCommand('10 C0');
+        log(`Ответ на сессию K-Line: <span class="info">${sessionKLine.replace(/\r/g, ' ')}</span>`);
         
         log('Отправка запроса ошибок по K-Line (18 02 FF)...');
         let checkKLine = await sendCommand('18 02 FF');
@@ -231,6 +241,7 @@
           log('Пробуем альтернативный адрес K-Line (F0)...');
           await sendCommand('AT WM 81 F0 F1');
           await sendCommand('81');
+          await sendCommand('10 C0'); // Сессия для адреса F0
           absResponse = await sendCommand('18 02 FF');
         }
       }
@@ -242,6 +253,8 @@
 
       if (rawResult.includes('NO DATA') || rawResult.trim() === '>') {
         showStatus('❌ Блок ABS не ответил ни по CAN, ни по K-Line', 'error');
+      } else if (rawResult.includes('7F 18')) {
+        showStatus('⚠️ Запрос отклонен (7F 18). Требуется полное зажигание', 'error');
       } else {
         showStatus('✅ Данные ABS успешно считаны!', 'sent');
       }
