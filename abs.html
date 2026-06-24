@@ -188,49 +188,41 @@
       showStatus('📡 Открытие диагностической сессии ABS...', 'sending');
       let absResponse = '';
 
-      // --- ШАГ 1: Попытка опроса через CAN-шину ---
+      // --- ШАГ 1: Попытка опроса через CAN-шину (UDS) ---
       log('Попытка 1: Настройка под CAN-шину (AT SP 6)...');
       await sendCommand('AT SP 6');  
       await sendCommand('AT SH 740'); // Установка CAN заголовка ABS Renault
+      await sendCommand('AT CRA 760'); // Явно принимаем ответы только от ABS
 
-      log('Запрос расширенной диагностической сессии по CAN (10 C0)...');
-      let sessionCAN = await sendCommand('10 C0');
-      log(`Ответ на сессию CAN: <span class="info">${sessionCAN.replace(/\r/g, ' ')}</span>`);
-
-      log('Отправка запроса ошибок по CAN (18 02 FF)...');
-      let checkCAN = await sendCommand('18 02 FF');
+      log('Отправка запроса ошибок по CAN через UDS (19 02 0D)...');
+      let checkCAN = await sendCommand('19 02 0D');
       log(`Ответ по CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
 
-      if (checkCAN.includes('58 02') || checkCAN.includes('7F 18')) {
+      if (checkCAN.includes('59 02') || checkCAN.includes('7F 19')) {
         absResponse = checkCAN;
         log('Блок успешно ответил по CAN-шине!', 'ok');
       } 
-      // --- ШАГ 2: Если CAN молчит, переключаемся на K-Line ---
+      // --- ШАГ 2: Если CAN молчит, переключаемся на K-Line (KWP2000) ---
       else if (checkCAN.includes('NO DATA') || checkCAN.includes('?') || checkCAN.includes('ERROR') || checkCAN.trim() === '>') {
         log('⚠️ CAN молчит. Переключаемся на K-Line (7 пин ОБД)...', 'info');
         
         await sendCommand('AT Z'); 
         await sendCommand('AT E0');
         await sendCommand('AT H1');
+        await sendCommand('AT AR'); // Сброс кастомных заголовков/масок
         
         log('Установка протокола K-Line (AT SP 5)...');
         await sendCommand('AT SP 5'); // KWP2000 (5 Baud Init)
-        
-        log('Настройка увеличенного таймаута ответа (AT ST FF)...');
         await sendCommand('AT ST FF'); // Максимальное время ожидания ответа блока
 
-        // Задаем заголовки K-line: 81 (Формат), 7B (Адрес ABS), F1 (Адрес Тестера)
+        // Задаем заголовки K-line для ABS Renault (Адрес 7B)
         await sendCommand('AT WM 81 7B F1'); 
         
         log('Инициализация K-Line сессии (Команда 81)...');
         let initKLine = await sendCommand('81');
         log(`Ответ на инициализацию: ${initKLine.replace(/\r/g, ' ')}`);
 
-        log('Запрос расширенной диагностической сессии по K-Line (10 C0)...');
-        let sessionKLine = await sendCommand('10 C0');
-        log(`Ответ на сессию K-Line: <span class="info">${sessionKLine.replace(/\r/g, ' ')}</span>`);
-        
-        log('Отправка запроса ошибок по K-Line (18 02 FF)...');
+        log('Запрос ошибок по K-Line (18 02 FF)...');
         let checkKLine = await sendCommand('18 02 FF');
         log(`Ответ по K-Line: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
         
@@ -241,20 +233,19 @@
           log('Пробуем альтернативный адрес K-Line (F0)...');
           await sendCommand('AT WM 81 F0 F1');
           await sendCommand('81');
-          await sendCommand('10 C0'); 
           absResponse = await sendCommand('18 02 FF');
         }
       }
 
       rawResult = absResponse || checkCAN;
 
-      // Сброс в автоматический режим
+      // Сброс ELM в автоматический режим
       await sendCommand('AT AR');
 
       if (rawResult.includes('NO DATA') || rawResult.trim() === '>') {
         showStatus('❌ Блок ABS не ответил ни по CAN, ни по K-Line', 'error');
-      } else if (rawResult.includes('7F 18')) {
-        showStatus('⚠️ Запрос отклонен (7F 18). Требуется сервисное зажигание', 'error');
+      } else if (rawResult.includes('7F 19') || rawResult.includes('7F 18')) {
+        showStatus('⚠️ Запрос отклонен (7F). Проверьте условия зажигания', 'error');
       } else {
         showStatus('✅ Данные ABS успешно считаны!', 'sent');
       }
