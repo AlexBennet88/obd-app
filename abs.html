@@ -147,7 +147,7 @@
         const text = new TextDecoder().decode(e.target.value);
         responseBuffer += text;
         
-        // Гарантируем, что символ ">" находится в самом конце буфера
+        // Защита от преждевременного завершения: проверяем, что ">" стоит в самом конце строки
         if (responseBuffer.trim().endsWith('>') && pendingResolve) {
           pendingResolve(responseBuffer);
           pendingResolve = null;
@@ -210,44 +210,66 @@
         absResponse = checkCAN;
         log('Блок успешно ответил по CAN-шине!', 'ok');
       } 
-      // --- ШАГ 2: Если CAN молчит, переключаемся на K-Line (KWP2000) ---
+      // --- ШАГ 2: Если CAN молчит, переключаемся на K-Line (Fast Init) ---
       else if (checkCAN.includes('NO DATA') || checkCAN.includes('?') || checkCAN.includes('ERROR') || checkCAN.trim() === '>') {
-        log('⚠️ CAN молчит. Переключаемся на K-Line (7 пин ОБД)...', 'info');
+        log('⚠️ CAN молчит. Включаем альтернативный протокол K-Line...', 'info');
         
         await sendCommand('AT Z'); 
         await sendCommand('AT E0');
         await sendCommand('AT H1');
-        await sendCommand('AT AR'); // Сброс кастомных заголовков/масок
+        await sendCommand('AT AR'); // Сброс кастомных заголовков
         
-        log('Установка протокола K-Line (AT SP 5)...');
-        await sendCommand('AT SP 5', 3000); // KWP2000 требует времени на переключение
-        await sendCommand('AT ST FF'); // Максимальное время ожидания ответа блока
+        // Переключаемся на Протокол 4 (KWP2000 Fast Init), он значительно стабильнее на клонах
+        log('Настройка протокола K-Line Fast Init (AT SP 4)...');
+        await sendCommand('AT SP 4', 3000); 
+        
+        // Тонкая настройка шины под блоки Bosch/Teves
+        await sendCommand('AT AT 0');   // Отключаем адаптивный таймаут
+        await sendCommand('AT ST FF');   // Выставляем максимальное время ожидания ответа
+        await sendCommand('AT IB 10');   // Фиксируем скорость K-Line (10400 бод)
 
-        // Задаем заголовки K-line для ABS Renault (Адрес 7B)
+        // Проверяем основной адрес ABS Renault (7B)
+        log('Пробуем адрес ABS [7B]. Установка хедера (AT WM 81 7B F1)...');
         await sendCommand('AT WM 81 7B F1'); 
         
-        log('Инициализация K-Line сессии (Команда 81, ожидание 4с)...');
-        let initKLine = await sendCommand('81', 4000); // 5-Baud Init процедура очень медленная
-        log(`Ответ на инициализацию: ${initKLine.replace(/\r/g, ' ')}`);
+        log('Инициализация K-Line сессии...');
+        let initKLine = await sendCommand('81', 4000); 
+        log(`Ответ на инициализацию [7B]: ${initKLine.replace(/\r/g, ' ')}`);
 
         log('Запрос ошибок по K-Line (18 02 FF)...');
         let checkKLine = await sendCommand('18 02 FF', 3000);
-        log(`Ответ по K-Line: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
+        log(`Ответ по K-Line [7B]: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
         
+        // Если адрес 7B выдал пустоту, сразу пробуем альтернативный адрес (F0)
+        if (checkKLine.includes('NO DATA') || checkKLine.includes('?') || checkKLine.trim() === '>') {
+          log('⚠️ Адрес 7B не ответил. Переключаемся на альтернативный адрес ABS [F0]...', 'info');
+          
+          await sendCommand('AT Z');
+          await sendCommand('AT E0');
+          await sendCommand('AT H1');
+          await sendCommand('AT SP 4');
+          
+          // Устанавливаем альтернативный хедер
+          await sendCommand('AT WM 81 F0 F1');
+          
+          log('Инициализация K-Line сессии по адресу [F0]...');
+          let initKLineF0 = await sendCommand('81', 4000);
+          log(`Ответ на инициализацию [F0]: ${initKLineF0.replace(/\r/g, ' ')}`);
+          
+          log('Запрос ошибок по K-Line (18 02 FF)...');
+          checkKLine = await sendCommand('18 02 FF', 3000);
+          log(`Ответ по K-Line [F0]: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
+        }
+
         if (checkKLine.includes('58 02') || checkKLine.includes('7F 18') || (!checkKLine.includes('NO DATA') && checkKLine.length > 5)) {
           absResponse = checkKLine;
-          log('Блок успешно ответил по K-Line!', 'ok');
-        } else {
-          log('Пробуем альтернативный адрес K-Line (F0)...');
-          await sendCommand('AT WM 81 F0 F1');
-          await sendCommand('81', 4000);
-          absResponse = await sendCommand('18 02 FF', 3000);
+          log('Блок ABS успешно отозвался по K-Line!', 'ok');
         }
       }
 
       rawResult = absResponse || checkCAN;
 
-      // Сброс ELM в автоматический режим
+      // Возвращаем настройки ELM в авто-режим
       await sendCommand('AT AR');
 
       if (rawResult.includes('NO DATA') || rawResult.trim() === '>') {
