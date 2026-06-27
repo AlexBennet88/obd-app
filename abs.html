@@ -147,7 +147,6 @@
         const text = new TextDecoder().decode(e.target.value);
         responseBuffer += text;
         
-        // Защита от преждевременного завершения: проверяем, что ">" стоит в самом конце строки
         if (responseBuffer.trim().endsWith('>') && pendingResolve) {
           pendingResolve(responseBuffer);
           pendingResolve = null;
@@ -155,9 +154,9 @@
       });
 
       log('Связь установлена. Базовая настройка ELM...', 'ok');
-      await sendCommand('AT Z');    // Сброс ELM
-      await sendCommand('AT E0');   // Отключаем эхо
-      await sendCommand('AT H1');   // Включаем заголовки ответов
+      await sendCommand('AT Z');    
+      await sendCommand('AT E0');   
+      await sendCommand('AT H1');   
       return true;
     } catch (e) {
       log(`Профиль мимо: ${e.message}`, 'err');
@@ -199,15 +198,21 @@
       // --- ШАГ 1: Попытка опроса через CAN-шину (UDS) ---
       log('Попытка 1: Настройка под CAN-шину (AT SP 6)...');
       await sendCommand('AT SP 6');  
-      await sendCommand('AT SH 740'); // Установка CAN заголовка ABS Renault
-      await sendCommand('AT CRA 760'); // Явно принимаем ответы только от ABS
+      await sendCommand('AT SH 740'); 
+      await sendCommand('AT CRA 760'); 
+
+      // ХИТРОСТЬ ИЗ CAR SCANNER: Пробиваем защитную дилерскую сессию перед запросом кодов
+      log('Открытие расширенной сессии UDS (10 03)...');
+      let sessionResponse = await sendCommand('10 03');
+      log(`Ответ сессии (Ожидается 50 03): <span class="info">${sessionResponse.replace(/\r/g, ' ')}</span>`);
 
       log('Отправка запроса ошибок по CAN через UDS (19 02 0D)...');
       let checkCAN = await sendCommand('19 02 0D');
       log(`Ответ по CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
 
       if (checkCAN.includes('59 02') || checkCAN.includes('7F 19')) {
-        absResponse = checkCAN;
+        // Склеиваем ответы в общую строку, чтобы n8n видел всю картину сессии
+        absResponse = `SESSION: ${sessionResponse} DATA: ${checkCAN}`;
         log('Блок успешно ответил по CAN-шине!', 'ok');
       } 
       // --- ШАГ 2: Если CAN молчит, переключаемся на K-Line (Fast Init) ---
@@ -217,18 +222,15 @@
         await sendCommand('AT Z'); 
         await sendCommand('AT E0');
         await sendCommand('AT H1');
-        await sendCommand('AT AR'); // Сброс кастомных заголовков
+        await sendCommand('AT AR'); 
         
-        // Переключаемся на Протокол 4 (KWP2000 Fast Init), он значительно стабильнее на клонах
         log('Настройка протокола K-Line Fast Init (AT SP 4)...');
         await sendCommand('AT SP 4', 3000); 
         
-        // Тонкая настройка шины под блоки Bosch/Teves
-        await sendCommand('AT AT 0');   // Отключаем адаптивный таймаут
-        await sendCommand('AT ST FF');   // Выставляем максимальное время ожидания ответа
-        await sendCommand('AT IB 10');   // Фиксируем скорость K-Line (10400 бод)
+        await sendCommand('AT AT 0');   
+        await sendCommand('AT ST FF');   
+        await sendCommand('AT IB 10');   
 
-        // Проверяем основной адрес ABS Renault (7B)
         log('Пробуем адрес ABS [7B]. Установка хедера (AT WM 81 7B F1)...');
         await sendCommand('AT WM 81 7B F1'); 
         
@@ -240,7 +242,6 @@
         let checkKLine = await sendCommand('18 02 FF', 3000);
         log(`Ответ по K-Line [7B]: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
         
-        // Если адрес 7B выдал пустоту, сразу пробуем альтернативный адрес (F0)
         if (checkKLine.includes('NO DATA') || checkKLine.includes('?') || checkKLine.trim() === '>') {
           log('⚠️ Адрес 7B не ответил. Переключаемся на альтернативный адрес ABS [F0]...', 'info');
           
@@ -249,7 +250,6 @@
           await sendCommand('AT H1');
           await sendCommand('AT SP 4');
           
-          // Устанавливаем альтернативный хедер
           await sendCommand('AT WM 81 F0 F1');
           
           log('Инициализация K-Line сессии по адресу [F0]...');
@@ -269,7 +269,6 @@
 
       rawResult = absResponse || checkCAN;
 
-      // Возвращаем настройки ELM в авто-режим
       await sendCommand('AT AR');
 
       if (rawResult.includes('NO DATA') || rawResult.trim() === '>') {
