@@ -118,13 +118,19 @@
     el.className = `status visible ${type}`;
   }
 
-  function sendCommand(cmd) {
+  function sendCommand(cmd, customTimeout = 2000) {
     return new Promise((resolve) => {
       responseBuffer = '';
       pendingResolve = resolve;
       const data = new TextEncoder().encode(cmd + '\r');
       writeChar.writeValue(data);
-      setTimeout(() => { if (pendingResolve) { pendingResolve(responseBuffer); pendingResolve = null; } }, 2000);
+      
+      setTimeout(() => { 
+        if (pendingResolve) { 
+          pendingResolve(responseBuffer); 
+          pendingResolve = null; 
+        } 
+      }, customTimeout);
     });
   }
 
@@ -140,7 +146,9 @@
       notifyChar.addEventListener('characteristicvaluechanged', (e) => {
         const text = new TextDecoder().decode(e.target.value);
         responseBuffer += text;
-        if (responseBuffer.includes('>') && pendingResolve) {
+        
+        // Гарантируем, что символ ">" находится в самом конце буфера
+        if (responseBuffer.trim().endsWith('>') && pendingResolve) {
           pendingResolve(responseBuffer);
           pendingResolve = null;
         }
@@ -212,18 +220,18 @@
         await sendCommand('AT AR'); // Сброс кастомных заголовков/масок
         
         log('Установка протокола K-Line (AT SP 5)...');
-        await sendCommand('AT SP 5'); // KWP2000 (5 Baud Init)
+        await sendCommand('AT SP 5', 3000); // KWP2000 требует времени на переключение
         await sendCommand('AT ST FF'); // Максимальное время ожидания ответа блока
 
         // Задаем заголовки K-line для ABS Renault (Адрес 7B)
         await sendCommand('AT WM 81 7B F1'); 
         
-        log('Инициализация K-Line сессии (Команда 81)...');
-        let initKLine = await sendCommand('81');
+        log('Инициализация K-Line сессии (Команда 81, ожидание 4с)...');
+        let initKLine = await sendCommand('81', 4000); // 5-Baud Init процедура очень медленная
         log(`Ответ на инициализацию: ${initKLine.replace(/\r/g, ' ')}`);
 
         log('Запрос ошибок по K-Line (18 02 FF)...');
-        let checkKLine = await sendCommand('18 02 FF');
+        let checkKLine = await sendCommand('18 02 FF', 3000);
         log(`Ответ по K-Line: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
         
         if (checkKLine.includes('58 02') || checkKLine.includes('7F 18') || (!checkKLine.includes('NO DATA') && checkKLine.length > 5)) {
@@ -232,8 +240,8 @@
         } else {
           log('Пробуем альтернативный адрес K-Line (F0)...');
           await sendCommand('AT WM 81 F0 F1');
-          await sendCommand('81');
-          absResponse = await sendCommand('18 02 FF');
+          await sendCommand('81', 4000);
+          absResponse = await sendCommand('18 02 FF', 3000);
         }
       }
 
