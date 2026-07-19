@@ -86,9 +86,8 @@
   <div class="log" id="log">Вставьте карту и включите сервисное зажигание (передача, зажим Старт 5 сек)...</div>
 </div>
 
-<script>
+  <script>
   const N8N_WEBHOOK_URL = 'https://unlisted-corner-proclaim.ngrok-free.dev/webhook/obd-receiver';
-
   const urlParams = new URLSearchParams(window.location.search);
   const chatId = urlParams.get('chat_id') || '';
   document.getElementById('chatTag').textContent = 'chat_id: ' + (chatId || '⚠️ не передан');
@@ -125,11 +124,11 @@
       const data = new TextEncoder().encode(cmd + '\r');
       writeChar.writeValue(data);
       
-      setTimeout(() => { 
-        if (pendingResolve) { 
-          pendingResolve(responseBuffer); 
-          pendingResolve = null; 
-        } 
+      setTimeout(() => {
+        if (pendingResolve) {
+          pendingResolve(responseBuffer);
+          pendingResolve = null;
+        }
       }, customTimeout);
     });
   }
@@ -141,22 +140,19 @@
       const service = await server.getPrimaryService(profile.service);
       writeChar = await service.getCharacteristic(profile.write);
       notifyChar = await service.getCharacteristic(profile.notify);
-
       await notifyChar.startNotifications();
       notifyChar.addEventListener('characteristicvaluechanged', (e) => {
         const text = new TextDecoder().decode(e.target.value);
         responseBuffer += text;
-        
         if (responseBuffer.trim().endsWith('>') && pendingResolve) {
           pendingResolve(responseBuffer);
           pendingResolve = null;
         }
       });
-
       log('Связь установлена. Базовая настройка ELM...', 'ok');
-      await sendCommand('AT Z');    
-      await sendCommand('AT E0');   
-      await sendCommand('AT H1');   
+      await sendCommand('AT Z');
+      await sendCommand('AT E0');
+      await sendCommand('AT H1');
       return true;
     } catch (e) {
       log(`Профиль мимо: ${e.message}`, 'err');
@@ -177,14 +173,13 @@
         optionalServices: OBD_PROFILES.map(p => p.service)
       });
       log(`Подключено к: <span class="ok">${device.name || 'Bluetooth ELM'}</span>`);
-      showStatus('🔄 Инициализация протоколов...', 'info');
 
+      showStatus('🔄 Инициализация протоколов...', 'info');
       let connected = false;
       for (const profile of OBD_PROFILES) {
         connected = await tryProfile(device, profile);
         if (connected) break;
       }
-
       if (!connected) {
         showStatus('❌ Не удалось настроить каналы связи BLE', 'error');
         btn.textContent = '🔌 Опросить блок ABS';
@@ -192,93 +187,78 @@
         return;
       }
 
-      showStatus('📡 Открытие диагностической сессии ABS...', 'sending');
+      // ==================== УЛУЧШЕННЫЙ WAKE-UP ====================
+      showStatus('📡 Wake-up + открытие сессии ABS...', 'sending');
+      log('🔄 Выполняем расширенный Wake-up для Renault...');
+
+      await sendCommand('AT Z', 1500);
+      await sendCommand('AT E0');
+      await sendCommand('AT H1');
+      await sendCommand('AT L0');
+      await sendCommand('AT S0');
+      await sendCommand('AT AL');
+
       let absResponse = '';
 
-      // --- ШАГ 1: Попытка опроса через CAN-шину (UDS) ---
-      log('Попытка 1: Настройка под CAN-шину (AT SP 6)...');
-      await sendCommand('AT SP 6');  
-      await sendCommand('AT SH 740'); 
-      await sendCommand('AT CRA 760'); 
+      // === Попытка 1: CAN UDS ===
+      log('Попытка 1: CAN (UDS)');
+      await sendCommand('AT SP 6');
+      await sendCommand('AT SH 740');
+      await sendCommand('AT CRA 760');
+      await sendCommand('3E 00', 800);           // Tester Present
+      await sendCommand('10 81', 1000);          // Default Session
+      let sessionResponse = await sendCommand('10 03', 1500);
+      log(`Сессия (10 03): <span class="info">${sessionResponse.replace(/\r/g, ' ')}</span>`);
 
-      // ХИТРОСТЬ ИЗ CAR SCANNER: Пробиваем защитную дилерскую сессию перед запросом кодов
-      log('Открытие расширенной сессии UDS (10 03)...');
-      let sessionResponse = await sendCommand('10 03');
-      log(`Ответ сессии (Ожидается 50 03): <span class="info">${sessionResponse.replace(/\r/g, ' ')}</span>`);
-
-      log('Отправка запроса ошибок по CAN через UDS (19 02 0D)...');
-      let checkCAN = await sendCommand('19 02 0D');
-      log(`Ответ по CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
+      let checkCAN = await sendCommand('19 02 0D', 2200);
+      log(`Ответ CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
 
       if (checkCAN.includes('59 02') || checkCAN.includes('7F 19')) {
-        // Склеиваем ответы в общую строку, чтобы n8n видел всю картину сессии
         absResponse = `SESSION: ${sessionResponse} DATA: ${checkCAN}`;
-        log('Блок успешно ответил по CAN-шине!', 'ok');
+        log('✅ Успешно по CAN!', 'ok');
       } 
-      // --- ШАГ 2: Если CAN молчит, переключаемся на K-Line (Fast Init) ---
-      else if (checkCAN.includes('NO DATA') || checkCAN.includes('?') || checkCAN.includes('ERROR') || checkCAN.trim() === '>') {
-        log('⚠️ CAN молчит. Включаем альтернативный протокол K-Line...', 'info');
-        
-        await sendCommand('AT Z'); 
-        await sendCommand('AT E0');
+      // === Попытка 2: K-Line ===
+      else {
+        log('⚠️ CAN молчит → переключаемся на K-Line', 'info');
+        await sendCommand('AT Z');
+        await sendCommand('AT SP 4', 2500);
         await sendCommand('AT H1');
-        await sendCommand('AT AR'); 
-        
-        log('Настройка протокола K-Line Fast Init (AT SP 4)...');
-        await sendCommand('AT SP 4', 3000); 
-        
-        await sendCommand('AT AT 0');   
-        await sendCommand('AT ST FF');   
-        await sendCommand('AT IB 10');   
+        await sendCommand('AT AR');
+        await sendCommand('AT ST FF');
+        await sendCommand('AT IB 10');
 
-        log('Пробуем адрес ABS [7B]. Установка хедера (AT WM 81 7B F1)...');
-        await sendCommand('AT WM 81 7B F1'); 
-        
-        log('Инициализация K-Line сессии...');
-        let initKLine = await sendCommand('81', 4000); 
-        log(`Ответ на инициализацию [7B]: ${initKLine.replace(/\r/g, ' ')}`);
+        // Адрес 7B
+        await sendCommand('AT WM 81 7B F1');
+        let initKLine = await sendCommand('81', 4000);
+        log(`Init [7B]: ${initKLine.replace(/\r/g, ' ')}`);
+        let checkKLine = await sendCommand('18 02 FF', 3200);
 
-        log('Запрос ошибок по K-Line (18 02 FF)...');
-        let checkKLine = await sendCommand('18 02 FF', 3000);
-        log(`Ответ по K-Line [7B]: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
-        
+        // Адрес F0 (fallback)
         if (checkKLine.includes('NO DATA') || checkKLine.includes('?') || checkKLine.trim() === '>') {
-          log('⚠️ Адрес 7B не ответил. Переключаемся на альтернативный адрес ABS [F0]...', 'info');
-          
-          await sendCommand('AT Z');
-          await sendCommand('AT E0');
-          await sendCommand('AT H1');
-          await sendCommand('AT SP 4');
-          
+          log('Пробуем адрес F0...', 'info');
           await sendCommand('AT WM 81 F0 F1');
-          
-          log('Инициализация K-Line сессии по адресу [F0]...');
-          let initKLineF0 = await sendCommand('81', 4000);
-          log(`Ответ на инициализацию [F0]: ${initKLineF0.replace(/\r/g, ' ')}`);
-          
-          log('Запрос ошибок по K-Line (18 02 FF)...');
-          checkKLine = await sendCommand('18 02 FF', 3000);
-          log(`Ответ по K-Line [F0]: <span class="ok">${checkKLine.replace(/\r/g, ' ')}</span>`);
+          await sendCommand('81', 4000);
+          checkKLine = await sendCommand('18 02 FF', 3200);
         }
 
-        if (checkKLine.includes('58 02') || checkKLine.includes('7F 18') || (!checkKLine.includes('NO DATA') && checkKLine.length > 5)) {
+        if (checkKLine.includes('58 02') || checkKLine.includes('7F 18') || checkKLine.length > 10) {
           absResponse = checkKLine;
-          log('Блок ABS успешно отозвался по K-Line!', 'ok');
+          log('✅ Успешно по K-Line!', 'ok');
         }
       }
 
-      rawResult = absResponse || checkCAN;
+      rawResult = absResponse || checkCAN || 'NO_RESPONSE';
 
       await sendCommand('AT AR');
 
       if (rawResult.includes('NO DATA') || rawResult.trim() === '>') {
-        showStatus('❌ Блок ABS не ответил ни по CAN, ни по K-Line', 'error');
-      } else if (rawResult.includes('7F 19') || rawResult.includes('7F 18')) {
-        showStatus('⚠️ Запрос отклонен (7F). Проверьте условия зажигания', 'error');
+        showStatus('❌ Блок не ответил. Попробуйте зажать Start 5 сек.', 'error');
+      } else if (rawResult.includes('7F')) {
+        showStatus('⚠️ Блок отклонил запрос (7F). Проверьте зажигание.', 'error');
       } else {
-        showStatus('✅ Данные ABS успешно считаны!', 'sent');
+        showStatus('✅ Данные успешно считаны!', 'sent');
       }
-      
+
       document.getElementById('sendBtn').disabled = false;
 
     } catch (err) {
@@ -286,18 +266,20 @@
       showStatus('❌ ' + err.message, 'error');
     }
 
+    const btn = document.getElementById('connectBtn');
     btn.textContent = '🔌 Повторить опрос ABS';
     btn.disabled = false;
   }
 
   async function sendToTelegram() {
     if (!chatId) {
-      showStatus('❌ Ошибка: запуск выполнен без chat_id', 'error');
+      showStatus('❌ Ошибка: chat_id не передан', 'error');
       return;
     }
     const btn = document.getElementById('sendBtn');
     btn.disabled = true;
-    showStatus('📤 Передача на n8n бэкенд...', 'sending');
+    showStatus('📤 Отправка в Telegram...', 'sending');
+
     try {
       const res = await fetch(N8N_WEBHOOK_URL, {
         method: 'POST',
@@ -309,11 +291,13 @@
         })
       });
       if (res.ok) {
-        showStatus('🚀 Отчет отправлен в Telegram!', 'sent');
-        log('Бэкенд успешно принял пакет.', 'ok');
-      } else throw new Error(`HTTP Status ${res.status}`);
+        showStatus('🚀 Отчет отправлен!', 'sent');
+        log('✅ Отправлено в n8n', 'ok');
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
     } catch (err) {
-      showStatus('❌ ' + err.message, 'error');
+      showStatus('❌ Ошибка отправки', 'error');
       log(`Ошибка HTTP: ${err.message}`, 'err');
     }
     btn.disabled = false;
