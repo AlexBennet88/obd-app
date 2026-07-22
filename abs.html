@@ -117,7 +117,7 @@
     el.className = `status visible ${type}`;
   }
 
-  function sendCommand(cmd, customTimeout = 2000) {
+  function sendCommand(cmd, customTimeout = 4000) {
     return new Promise((resolve) => {
       responseBuffer = '';
       pendingResolve = resolve;
@@ -191,7 +191,7 @@
       showStatus('📡 Wake-up + открытие сессии ABS...', 'sending');
       log('🔄 Выполняем расширенный Wake-up для Renault...');
 
-      await sendCommand('AT Z', 1500);
+      await sendCommand('AT Z', 3000);
       await sendCommand('AT E0');
       await sendCommand('AT H1');
       await sendCommand('AT L0');
@@ -229,9 +229,9 @@
 
         // Адрес 7B
         await sendCommand('AT WM 81 7B F1');
-        let initKLine = await sendCommand('81', 4000);
+        let initKLine = await sendCommand('81', 6000);
         log(`Init [7B]: ${initKLine.replace(/\r/g, ' ')}`);
-        let checkKLine = await sendCommand('18 02 FF', 3200);
+        let checkKLine = await sendCommand('18 02 FF', 4500);
 
         // Адрес F0 (fallback)
         if (checkKLine.includes('NO DATA') || checkKLine.includes('?') || checkKLine.trim() === '>') {
