@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Airbag (SRS) Диагностика</title>
+  <title>Airbag (SRS) Расширенная Диагностика</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,17 +22,17 @@
     }
     .card {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 32px 28px;
-      max-width: 400px; width: 100%;
+      border-radius: 20px; padding: 28px 24px;
+      max-width: 440px; width: 100%;
       box-shadow: 0 0 40px rgba(239, 68, 68, 0.08);
     }
-    .header { text-align: center; margin-bottom: 24px; }
-    .icon { font-size: 48px; margin-bottom: 12px; display: block; }
-    h1 { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 6px; }
-    .subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .icon { font-size: 44px; margin-bottom: 8px; display: block; }
+    h1 { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 12px; line-height: 1.4; }
     .chat-tag {
       display: inline-block; font-size: 11px; padding: 4px 10px;
-      border-radius: 8px; margin-top: 10px;
+      border-radius: 8px; margin-top: 8px;
       background: rgba(239, 68, 68, 0.12); color: var(--accent2);
       border: 1px solid rgba(239, 68, 68, 0.25);
     }
@@ -42,12 +42,30 @@
       background: rgba(255,255,255,0.03);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 16px;
+      padding: 12px;
       text-align: center;
+      margin-bottom: 16px;
+    }
+    .srs-title { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .srs-value { font-size: 18px; font-weight: 900; color: var(--text); margin-top: 4px; }
+
+    /* Дашборд параметров SRS */
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
       margin-bottom: 20px;
     }
-    .srs-title { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; }
-    .srs-value { font-size: 20px; font-weight: 900; color: var(--text); margin-top: 6px; }
+    .metric-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .metric-title { font-size: 9px; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .metric-value { font-size: 15px; font-weight: 800; color: var(--accent2); margin-top: 4px; }
+    .metric-unit { font-size: 9px; color: var(--muted); }
 
     .btn {
       display: block; width: 100%; padding: 14px; border: none;
@@ -68,15 +86,15 @@
     .btn-send:hover { background: rgba(74,222,128,0.08); }
     .btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
 
-    .status { margin: 14px 0; font-size: 13px; padding: 10px 14px; border-radius: 10px; display: none; }
+    .status { margin: 12px 0; font-size: 12px; padding: 10px 12px; border-radius: 10px; display: none; }
     .status.visible { display: block; }
     .status.sending { background: rgba(59,130,246,0.12); color: #60a5fa; }
     .status.sent    { background: rgba(74,222,128,0.12); color: var(--green); }
     .status.error   { background: rgba(248,113,113,0.12); color: var(--red); }
     .status.info    { background: rgba(250,204,21,0.10); color: var(--yellow); }
 
-    .divider { height: 1px; background: var(--border); margin: 18px 0; }
-    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 140px; overflow-y: auto; }
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 120px; overflow-y: auto; }
     .log span { color: var(--accent2); }
     .log .err { color: var(--red); }
     .log .ok { color: var(--green); }
@@ -87,13 +105,36 @@
   <div class="header">
     <span class="icon">🦺</span>
     <h1>AIRBAG / SRS</h1>
-    <p class="subtitle">Сканирование системы безопасности</p>
+    <p class="subtitle">Сканирование ошибок, пиропатронов и замков</p>
     <div class="chat-tag" id="chatTag">chat_id: —</div>
   </div>
 
   <div class="srs-status-box">
-    <div class="srs-title">Состояние системы SRS</div>
+    <div class="srs-title">Статус DTC Ошибок</div>
     <div class="srs-value" id="srsState">Ожидание...</div>
+  </div>
+
+  <div class="dashboard">
+    <div class="metric-card">
+      <div class="metric-title">Crash Data (Удар)</div>
+      <div class="metric-value" id="valCrash">—</div>
+      <div class="metric-unit">флаг аварии</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Замок Ремень Вод.</div>
+      <div class="metric-value" id="valBelt">—</div>
+      <div class="metric-unit">состояние</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Подушка Водителя</div>
+      <div class="metric-value" id="valOhmDriver">—</div>
+      <div class="metric-unit">сопротивление</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Подушка Пассажира</div>
+      <div class="metric-value" id="valOhmPass">—</div>
+      <div class="metric-unit">сопротивление</div>
+    </div>
   </div>
 
   <button class="btn btn-primary" id="connectBtn" onclick="connectOBD()">🔌 Проверить AIRBAG</button>
@@ -118,6 +159,7 @@
   ];
 
   let rawResult = '';
+  let parsedData = {};
   let writeChar = null;
   let notifyChar = null;
   let responseBuffer = '';
@@ -144,6 +186,45 @@
       writeChar.writeValue(data);
       setTimeout(() => { if (pendingResolve) { pendingResolve(responseBuffer); pendingResolve = null; } }, timeoutMs);
     });
+  }
+
+  function parseOBDBytes(hexStr) {
+    const clean = hexStr.replace(/[\r\n\s>]/g, '');
+    return clean.match(/[0-9A-Fa-f]{2}/g) || [];
+  }
+
+  // --- Функция парсинга сопротивления пиропатронов (в Омах) ---
+  function parseOhm(hexStr) {
+    const bytes = parseOBDBytes(hexStr);
+    const idx = bytes.indexOf('62'); // Положительный ответ UDS 22 -> 62
+    if (idx !== -1 && bytes.length >= idx + 4) {
+      const val = parseInt(bytes[idx + 3], 16);
+      // Масштаб расчёта: значение / 10 (например 25 = 2.5 Ом)
+      return (val / 10).toFixed(1) + ' Ом';
+    }
+    return 'N/A';
+  }
+
+  // --- Функция парсинга статуса замка ремня ---
+  function parseSeatbelt(hexStr) {
+    const bytes = parseOBDBytes(hexStr);
+    const idx = bytes.indexOf('62');
+    if (idx !== -1 && bytes.length >= idx + 4) {
+      const val = parseInt(bytes[idx + 3], 16);
+      return (val & 0x01) ? 'Застёгнут' : 'Растёгнут';
+    }
+    return 'N/A';
+  }
+
+  // --- Функция парсинга флага Crash Data ---
+  function parseCrashData(hexStr) {
+    const bytes = parseOBDBytes(hexStr);
+    const idx = bytes.indexOf('62');
+    if (idx !== -1 && bytes.length >= idx + 4) {
+      const val = parseInt(bytes[idx + 3], 16);
+      return val > 0 ? 'CRASH DETECTED!' : 'Чисто (OK)';
+    }
+    return 'Чисто (OK)';
   }
 
   async function tryProfile(device, profile) {
@@ -179,7 +260,7 @@
   async function connectOBD() {
     const btn = document.getElementById('connectBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ Поиск...';
+    btn.textContent = '⏳ Чтение SRS...';
     log('Запрашиваю Bluetooth устройство...');
 
     try {
@@ -203,20 +284,45 @@
         return;
       }
 
-      showStatus('📡 Адресация к блоку AIRBAG (771)...', 'sending');
+      showStatus('📡 Запрос параметров блока AIRBAG (771)...', 'sending');
 
-      // 1. Устанавливаем адрес блока Airbag (771 для большинства платформенных машин)
-      log('Отправка AT SH 771...');
+      // 1. Установка адреса блока Airbag (771)
+      log('Адресация: AT SH 771...');
       await sendCommand('AT SH 771');
 
-      // 2. Чтение ошибок UDS (19 02 AF)
-      log('Запрос ошибок UDS (19 02 AF)...');
+      // 2. Чтение DTC Ошибок (19 02 AF)
+      log('Запрос DTC ошибок (19 02 AF)...');
       const resDtc = await sendCommand('19 02 AF', 2000);
-      log(`Ответ SRS: <span class="ok">${resDtc.replace(/\r/g, ' ')}</span>`);
-
       rawResult = resDtc.replace(/\r/g, ' ').trim();
 
-      // Отображение статуса
+      // 3. Запрос флага Crash Data (22 01 0B)
+      log('Проверка Crash Data (22 01 0B)...');
+      const resCrash = await sendCommand('22 01 0B', 1200);
+      const crashStatus = parseCrashData(resCrash);
+
+      // 4. Запрос ремня безопасности (22 10 05)
+      log('Чтение замка ремня (22 10 05)...');
+      const resBelt = await sendCommand('22 10 05', 1200);
+      const beltStatus = parseSeatbelt(resBelt);
+
+      // 5. Сопротивление подушки водителя (22 10 01)
+      log('Пиропатрон водителя (22 10 01)...');
+      const resDriver = await sendCommand('22 10 01', 1200);
+      const ohmDriver = parseOhm(resDriver);
+
+      // 6. Сопротивление подушки пассажира (22 10 02)
+      log('Пиропатрон пассажира (22 10 02)...');
+      const resPass = await sendCommand('22 10 02', 1200);
+      const ohmPass = parseOhm(resPass);
+
+      // Отрисовка результатов на дашборде
+      document.getElementById('valCrash').textContent = crashStatus;
+      document.getElementById('valCrash').style.color = crashStatus.includes('CRASH') ? 'var(--red)' : 'var(--green)';
+
+      document.getElementById('valBelt').textContent = beltStatus;
+      document.getElementById('valOhmDriver').textContent = ohmDriver;
+      document.getElementById('valOhmPass').textContent = ohmPass;
+
       const stateEl = document.getElementById('srsState');
       if (rawResult.includes('7F')) {
         stateEl.textContent = '⚠️ Блок отклонил запрос';
@@ -229,15 +335,25 @@
         stateEl.style.color = 'var(--green)';
       }
 
+      // Формируем структурированный пакет данных для вебхука
+      parsedData = {
+        module: 'AIRBAG_SRS',
+        raw_dtc: rawResult,
+        crash_status: crashStatus,
+        seatbelt_driver: beltStatus,
+        ohm_driver_airbag: ohmDriver,
+        ohm_passenger_airbag: ohmPass
+      };
+
       document.getElementById('sendBtn').disabled = false;
-      showStatus('✅ Сканирование завершено!', 'sent');
+      showStatus('✅ Данные SRS полностью собраны!', 'sent');
 
     } catch (err) {
       log(`Ошибка: ${err.message}`, 'err');
       showStatus('❌ ' + err.message, 'error');
     }
 
-    btn.textContent = '🔌 Переподключиться';
+    btn.textContent = '🔌 Повторить сканирование';
     btn.disabled = false;
   }
 
@@ -255,6 +371,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: 'AIRBAG_SRS',
+          data: parsedData,
           raw: rawResult,
           chat_id: chatId,
           timestamp: new Date().toISOString()
