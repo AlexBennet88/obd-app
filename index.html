@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OBD Диагностика</title>
+  <title>OBD Диагностика & Дашборд</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,7 +23,7 @@
     .card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 20px; padding: 32px 28px;
-      max-width: 400px; width: 100%;
+      max-width: 440px; width: 100%;
       box-shadow: 0 0 40px rgba(59,130,246,0.08);
     }
     .header { text-align: center; margin-bottom: 24px; }
@@ -36,6 +36,25 @@
       background: rgba(59,130,246,0.12); color: var(--accent2);
       border: 1px solid rgba(59,130,246,0.25);
     }
+
+    /* Сетка параметров (Дашборд) */
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+    .metric-title { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .metric-value { font-size: 18px; font-weight: 900; color: var(--accent2); margin-top: 4px; }
+    .metric-unit { font-size: 10px; color: var(--muted); }
+
     .btn {
       display: block; width: 100%; padding: 14px; border: none;
       border-radius: 12px; font-family: 'Inter', sans-serif;
@@ -63,7 +82,7 @@
     .status.info    { background: rgba(250,204,21,0.10); color: var(--yellow); }
 
     .divider { height: 1px; background: var(--border); margin: 18px 0; }
-    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 160px; overflow-y: auto; }
+    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 140px; overflow-y: auto; }
     .log span { color: var(--accent2); }
     .log .err { color: var(--red); }
     .log .ok { color: var(--green); }
@@ -74,8 +93,26 @@
   <div class="header">
     <span class="icon">🚗</span>
     <h1>OBD Диагностика</h1>
-    <p class="subtitle">Подключись к адаптеру для проверки ошибок двигателя</p>
+    <p class="subtitle">Чтение параметров и ошибок двигателя</p>
     <div class="chat-tag" id="chatTag">chat_id: —</div>
+  </div>
+
+  <div class="dashboard">
+    <div class="metric-card">
+      <div class="metric-title">Обороты</div>
+      <div class="metric-value" id="valRpm">—</div>
+      <div class="metric-unit">об/мин</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Скорость</div>
+      <div class="metric-value" id="valSpeed">—</div>
+      <div class="metric-unit">км/ч</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">ОР (Coolant)</div>
+      <div class="metric-value" id="valTemp">—</div>
+      <div class="metric-unit">°C</div>
+    </div>
   </div>
 
   <button class="btn btn-primary" id="connectBtn" onclick="connectOBD()">🔌 Подключиться к OBD</button>
@@ -89,12 +126,10 @@
 <script>
   const N8N_WEBHOOK_URL = 'https://unlisted-corner-proclaim.ngrok-free.dev/webhook/obd-receiver';
 
-  // Получаем chat_id из URL: ?chat_id=12345
   const urlParams = new URLSearchParams(window.location.search);
   const chatId = urlParams.get('chat_id') || '';
   document.getElementById('chatTag').textContent = 'chat_id: ' + (chatId || '⚠️ не передан');
 
-  // 3 популярных UUID-профиля для ELM327 BLE адаптеров
   const OBD_PROFILES = [
     { name: 'Type A (fff0)', service: '0000fff0-0000-1000-8000-00805f9b34fb', notify: '0000fff1-0000-1000-8000-00805f9b34fb', write: '0000fff2-0000-1000-8000-00805f9b34fb' },
     { name: 'Type B (18f0)', service: '000018f0-0000-1000-8000-00805f9b34fb', notify: '00002af0-0000-1000-8000-00805f9b34fb', write: '00002af1-0000-1000-8000-00805f9b34fb' },
@@ -102,6 +137,7 @@
   ];
 
   let rawResult = '';
+  let parsedData = {};
   let writeChar = null;
   let notifyChar = null;
   let responseBuffer = '';
@@ -120,14 +156,50 @@
     el.className = `status visible ${type}`;
   }
 
-  function sendCommand(cmd) {
+  function sendCommand(cmd, timeoutMs = 1500) {
     return new Promise((resolve) => {
       responseBuffer = '';
       pendingResolve = resolve;
       const data = new TextEncoder().encode(cmd + '\r');
       writeChar.writeValue(data);
-      setTimeout(() => { if (pendingResolve) { pendingResolve(responseBuffer); pendingResolve = null; } }, 2500);
+      setTimeout(() => { if (pendingResolve) { pendingResolve(responseBuffer); pendingResolve = null; } }, timeoutMs);
     });
+  }
+
+  // --- Парсеры ответов OBD-II ---
+  function parseOBDResponse(hexStr) {
+    // Очищаем ответ от лишних символов и переносов
+    const clean = hexStr.replace(/[\r\n\s>]/g, '');
+    
+    // Поиск байт данных (ответы формата 41 XX ...)
+    const bytes = clean.match(/[0-9A-Fa-f]{2}/g) || [];
+    return bytes;
+  }
+
+  function parseRPM(bytes) {
+    const idx = bytes.indexOf('41');
+    if (idx !== -1 && bytes[idx + 1] === '0C' && bytes.length >= idx + 4) {
+      const A = parseInt(bytes[idx + 2], 16);
+      const B = parseInt(bytes[idx + 3], 16);
+      return Math.round(((A * 256) + B) / 4);
+    }
+    return null;
+  }
+
+  function parseSpeed(bytes) {
+    const idx = bytes.indexOf('41');
+    if (idx !== -1 && bytes[idx + 1] === '0D' && bytes.length >= idx + 3) {
+      return parseInt(bytes[idx + 2], 16);
+    }
+    return null;
+  }
+
+  function parseTemp(bytes) {
+    const idx = bytes.indexOf('41');
+    if (idx !== -1 && bytes[idx + 1] === '05' && bytes.length >= idx + 3) {
+      return parseInt(bytes[idx + 2], 16) - 40;
+    }
+    return null;
   }
 
   async function tryProfile(device, profile) {
@@ -149,7 +221,7 @@
       });
 
       log('Подключено! Инициализирую ELM327...', 'ok');
-      await sendCommand('AT Z');
+      await sendCommand('AT Z', 2000);
       await sendCommand('AT E0');
       await sendCommand('AT SP 0');
       return true;
@@ -187,23 +259,45 @@
         return;
       }
 
-      showStatus('📡 Запрашиваю коды ошибок (DTC)...', 'sending');
-      
-      // 1. Запрашиваем сохраненные ошибки (Mode 03)
-      log('Запрос сохраненных ошибок (03)...');
-      const res03 = await sendCommand('03');
-      log(`Ответ 03: <span class="ok">${res03.replace(/\r/g, ' ')}</span>`);
+      showStatus('📡 Чтение параметров...', 'sending');
 
-      // 2. Запрашиваем ожидающие ошибки (Mode 07)
-      log('Запрос ожидающих ошибок (07)...');
-      const res07 = await sendCommand('07');
-      log(`Ответ 07: <span class="ok">${res07.replace(/\r/g, ' ')}</span>`);
+      // --- 1. Обороты (01 0C) ---
+      log('Запрос RPM (01 0C)...');
+      const resRpm = await sendCommand('01 0C');
+      const rpmVal = parseRPM(parseOBDResponse(resRpm));
+      document.getElementById('valRpm').textContent = rpmVal !== null ? rpmVal : 'N/A';
 
-      // 3. Склеиваем оба ответа для отправки в n8n
-      rawResult = `MODE_03: ${res03} | MODE_07: ${res07}`;
+      // --- 2. Скорость (01 0D) ---
+      log('Запрос Скорости (01 0D)...');
+      const resSpeed = await sendCommand('01 0D');
+      const speedVal = parseSpeed(parseOBDResponse(resSpeed));
+      document.getElementById('valSpeed').textContent = speedVal !== null ? speedVal : 'N/A';
+
+      // --- 3. Температура (01 05) ---
+      log('Запрос Температуры (01 05)...');
+      const resTemp = await sendCommand('01 05');
+      const tempVal = parseTemp(parseOBDResponse(resTemp));
+      document.getElementById('valTemp').textContent = tempVal !== null ? tempVal : 'N/A';
+
+      // --- 4. Ошибки (Mode 03 и 07) ---
+      log('Запрос ошибок (03)...');
+      const res03 = await sendCommand('03', 2000);
+      log('Запрос ошибок (07)...');
+      const res07 = await sendCommand('07', 2000);
+
+      // Сохраняем агрегированный результат
+      parsedData = {
+        rpm: rpmVal,
+        speed: speedVal,
+        temp: tempVal,
+        dtc_03: res03.replace(/\r/g, ' ').trim(),
+        dtc_07: res07.replace(/\r/g, ' ').trim()
+      };
+
+      rawResult = JSON.stringify(parsedData);
 
       document.getElementById('sendBtn').disabled = false;
-      showStatus('✅ Данные получены! Нажми "Отправить результат"', 'sent');
+      showStatus('✅ Данные собраны! Можно отправлять.', 'sent');
 
     } catch (err) {
       log(`Ошибка: ${err.message}`, 'err');
@@ -227,6 +321,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          data: parsedData,
           raw: rawResult,
           chat_id: chatId,
           timestamp: new Date().toISOString()
