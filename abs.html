@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Renault ABS & Airbag Диагностика </title>
+  <title>Renault Scenic 2 — Airbag (KWP2000)</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --bg: #0a0a0f; --surface: #13131a; --border: #22222e;
-      --accent: #eab308; --accent2: #fef08a;
-      --green: #4ade80; --red: #f87171; --blue: #3b82f6;
+      --accent: #ef4444; --accent2: #f87171;
+      --green: #4ade80; --yellow: #facc15; --red: #f87171; --blue: #60a5fa;
       --text: #f0f0f4; --muted: #6b7280;
     }
     body {
@@ -22,20 +22,49 @@
     }
     .card {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 32px 28px;
-      max-width: 400px; width: 100%;
-      box-shadow: 0 0 40px rgba(234,179,8,0.05);
+      border-radius: 20px; padding: 28px 24px;
+      max-width: 440px; width: 100%;
+      box-shadow: 0 0 40px rgba(239, 68, 68, 0.08);
     }
-    .header { text-align: center; margin-bottom: 24px; }
-    .icon { font-size: 48px; margin-bottom: 12px; display: block; }
-    h1 { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 6px; }
-    .subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .icon { font-size: 44px; margin-bottom: 8px; display: block; }
+    h1 { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 12px; line-height: 1.4; }
     .chat-tag {
       display: inline-block; font-size: 11px; padding: 4px 10px;
-      border-radius: 8px; margin-top: 10px;
-      background: rgba(234,179,8,0.1); color: var(--accent2);
-      border: 1px solid rgba(234,179,8,0.2);
+      border-radius: 8px; margin-top: 8px;
+      background: rgba(239, 68, 68, 0.12); color: var(--accent2);
+      border: 1px solid rgba(239, 68, 68, 0.25);
     }
+
+    .srs-status-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .srs-title { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .srs-value { font-size: 18px; font-weight: 900; color: var(--text); margin-top: 4px; }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .metric-title { font-size: 9px; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .metric-value { font-size: 15px; font-weight: 800; color: var(--accent2); margin-top: 4px; }
+    .metric-unit { font-size: 9px; color: var(--muted); }
+
     .btn {
       display: block; width: 100%; padding: 14px; border: none;
       border-radius: 12px; font-family: 'Inter', sans-serif;
@@ -43,8 +72,8 @@
       transition: all 0.2s ease; margin-bottom: 10px;
     }
     .btn-primary {
-      background: linear-gradient(135deg, #ca8a04, var(--accent));
-      color: #000; box-shadow: 0 4px 20px rgba(234,179,8,0.25);
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: white; box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3);
     }
     .btn-primary:hover { transform: translateY(-1px); }
     .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
@@ -55,15 +84,15 @@
     .btn-send:hover { background: rgba(74,222,128,0.08); }
     .btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
 
-    .status { margin: 14px 0; font-size: 13px; padding: 10px 14px; border-radius: 10px; display: none; }
+    .status { margin: 12px 0; font-size: 12px; padding: 10px 12px; border-radius: 10px; display: none; }
     .status.visible { display: block; }
     .status.sending { background: rgba(59,130,246,0.12); color: var(--blue); }
     .status.sent    { background: rgba(74,222,128,0.12); color: var(--green); }
     .status.error   { background: rgba(248,113,113,0.12); color: var(--red); }
-    .status.info    { background: rgba(250,204,21,0.10); color: var(--accent); }
+    .status.info    { background: rgba(250,204,21,0.10); color: var(--yellow); }
 
-    .divider { height: 1px; background: var(--border); margin: 18px 0; }
-    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 160px; overflow-y: auto; }
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+    .log { font-size: 11px; color: var(--muted); line-height: 1.8; font-family: 'Courier New', monospace; max-height: 140px; overflow-y: auto; }
     .log span { color: var(--accent2); }
     .log .err { color: var(--red); }
     .log .ok { color: var(--green); }
@@ -73,18 +102,46 @@
 <body>
 <div class="card">
   <div class="header">
-    <span class="icon">🛑</span>
-    <h1>Диагностика ABS</h1>
-    <p class="subtitle">Поиск дилерских ошибок тормозной системы Renault Scenic 2</p>
+    <span class="icon">🦺</span>
+    <h1>AIRBAG / SRS (K-Line)</h1>
+    <p class="subtitle">Диагностика KWP2000 для Renault Scenic 2</p>
     <div class="chat-tag" id="chatTag">chat_id: —</div>
   </div>
 
-  <button class="btn btn-primary" id="connectBtn" onclick="connectABS()">🔌 Опросить блок ABS</button>
+  <div class="srs-status-box">
+    <div class="srs-title">Статус DTC (KWP2000)</div>
+    <div class="srs-value" id="srsState">Ожидание...</div>
+  </div>
+
+  <div class="dashboard">
+    <div class="metric-card">
+      <div class="metric-title">Crash Data (Удар)</div>
+      <div class="metric-value" id="valCrash">—</div>
+      <div class="metric-unit">флаг аварии</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Замок Ремень Вод.</div>
+      <div class="metric-value" id="valBelt">—</div>
+      <div class="metric-unit">состояние</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Подушка Водителя</div>
+      <div class="metric-value" id="valOhmDriver">—</div>
+      <div class="metric-unit">сопротивление</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Подушка Пассажира</div>
+      <div class="metric-value" id="valOhmPass">—</div>
+      <div class="metric-unit">сопротивление</div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="connectBtn" onclick="connectOBD()">🔌 Опросить AIRBAG (KWP2000)</button>
   <button class="btn btn-send" id="sendBtn" onclick="sendToTelegram()" disabled>📤 Отправить отчет в Telegram</button>
 
   <div class="status" id="status"></div>
   <div class="divider"></div>
-  <div class="log" id="log">Инструкция: Вставьте карту, передачу 1, зажмите Start на 10 сек (без педалей).</div>
+  <div class="log" id="log">Инструкция: Вставьте карту, 1-я передача, зажмите Start на 10 сек (без педалей).</div>
 </div>
 
 <script>
@@ -100,6 +157,7 @@
   ];
 
   let rawResult = '';
+  let parsedData = {};
   let writeChar = null;
   let notifyChar = null;
   let responseBuffer = '';
@@ -130,7 +188,7 @@
     }
   }
 
-  function sendCommand(cmd, customTimeout = 3000) {
+  function sendCommand(cmd, customTimeout = 2500) {
     return new Promise((resolve) => {
       responseBuffer = '';
       if (timerId) clearTimeout(timerId);
@@ -141,7 +199,6 @@
       };
 
       const data = new TextEncoder().encode(cmd + '\r');
-      
       const writePromise = writeChar.writeValueWithResponse 
         ? writeChar.writeValueWithResponse(data)
         : writeChar.writeValue(data);
@@ -158,8 +215,45 @@
     });
   }
 
+  function parseOBDBytes(hexStr) {
+    const clean = hexStr.replace(/[\r\n\s>]/g, '');
+    return clean.match(/[0-9A-Fa-f]{2}/g) || [];
+  }
+
+  // Парсинг параметров KWP2000 (Запрос 21 XX -> Ответ 61 XX)
+  function parseKwpOhm(hexStr) {
+    const bytes = parseOBDBytes(hexStr);
+    const idx = bytes.indexOf('61');
+    if (idx !== -1 && bytes.length >= idx + 3) {
+      const rawVal = parseInt(bytes[idx + 2], 16);
+      if (rawVal === 255 || rawVal === 0) return 'Обрыв / Замыкание';
+      return (rawVal / 10).toFixed(1) + ' Ом';
+    }
+    return 'N/A';
+  }
+
+  function parseKwpBelt(hexStr) {
+    const bytes = parseOBDBytes(hexStr);
+    const idx = bytes.indexOf('61');
+    if (idx !== -1 && bytes.length >= idx + 3) {
+      const val = parseInt(bytes[idx + 2], 16);
+      return (val & 0x01) ? 'Застёгнут' : 'Растёгнут';
+    }
+    return 'N/A';
+  }
+
+  function parseKwpCrash(hexStr) {
+    const bytes = parseOBDBytes(hexStr);
+    const idx = bytes.indexOf('61');
+    if (idx !== -1 && bytes.length >= idx + 3) {
+      const val = parseInt(bytes[idx + 2], 16);
+      return val > 0 ? 'CRASH DETECTED!' : 'Чисто (OK)';
+    }
+    return 'Чисто (OK)';
+  }
+
   async function tryProfile(device, profile) {
-    log(`Пробую профиль BLE: ${profile.name}`);
+    log(`Пробую профиль: ${profile.name}`);
     try {
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(profile.service);
@@ -170,29 +264,24 @@
       notifyChar.addEventListener('characteristicvaluechanged', onCharacteristicValueChanged);
 
       await notifyChar.startNotifications();
-      log('Связь с ELM установлена!', 'ok');
-      await sendCommand('AT Z', 2000);
-      await sendCommand('AT E0', 1000);
-      await sendCommand('AT H1', 1000);
+      log('Связь с адаптером установлена!', 'ok');
       return true;
     } catch (e) {
-      log(`Профиль мимо: ${e.message}`, 'err');
+      log(`Ошибка профиля: ${e.message}`, 'err');
       try { if (device.gatt && device.gatt.connected) device.gatt.disconnect(); } catch (_) {}
       return false;
     }
   }
 
-  async function connectABS() {
-    // Проверка поддержки Web Bluetooth
+  async function connectOBD() {
     if (!navigator.bluetooth) {
-      showStatus('❌ Браузер не поддерживает Bluetooth! Откройте страницу в Chrome или Bluefy.', 'error');
-      log('❌ Ошибка: Web Bluetooth недоступен (Telegram Webview / Safari)', 'err');
+      showStatus('❌ Web Bluetooth недоступен. Используйте Chrome или Bluefy.', 'error');
       return;
     }
 
     const btn = document.getElementById('connectBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ Поиск адаптера...';
+    btn.textContent = '⏳ Подключение K-Line...';
     log('Поиск Bluetooth устройств...');
 
     try {
@@ -200,89 +289,116 @@
         acceptAllDevices: true,
         optionalServices: OBD_PROFILES.map(p => p.service)
       });
-      log(`Подключено к: <span class="ok">${device.name || 'ELM327 Adapter'}</span>`);
+      log(`Адаптер: <span class="ok">${device.name || 'ELM327'}</span>`);
 
-      showStatus('🔄 Инициализация профиля Bluetooth...', 'info');
       let connected = false;
       for (const profile of OBD_PROFILES) {
         connected = await tryProfile(device, profile);
         if (connected) break;
       }
       if (!connected) {
-        showStatus('❌ Не удалось настроить каналы связи BLE', 'error');
-        btn.textContent = '🔌 Опросить блок ABS';
+        showStatus('❌ Ошибка профиля Bluetooth', 'error');
+        btn.textContent = '🔌 Опросить AIRBAG (KWP2000)';
         btn.disabled = false;
         return;
       }
 
-      // ==================== ОПРОС ABS ====================
-      showStatus('📡 Открытие сессии блока ABS...', 'sending');
-      log('🔄 Опрос ABS Renault Scenic 2...');
+      // ==================== НАСТРОЙКА KWP2000 K-LINE ====================
+      showStatus('📡 Настройка KWP2000 (K-Line)...', 'sending');
+      log('Сброс ELM327 и установка протокола KWP2000...');
 
       await sendCommand('AT Z', 2000);
-      await sendCommand('AT E0');
-      await sendCommand('AT H1');
-      await sendCommand('AT L0');
-      await sendCommand('AT AL');
+      await sendCommand('AT E0', 1000);
+      await sendCommand('AT H1', 1000); // Отображать заголовки
+      await sendCommand('AT L0', 1000);
+      await sendCommand('AT AL', 1000);
 
-      let absResponse = '';
+      // Протокол 5: KWP2000 Fast Init (10.4 kbaud)
+      await sendCommand('AT SP 5', 1000);
 
-      // === Попытка 1: CAN UDS (ID 740 / 760) ===
-      log('Попытка 1: CAN UDS (500kbps)');
-      await sendCommand('AT SP 6');
-      await sendCommand('AT SH 740');
-      await sendCommand('AT CRA 760');
-      
-      // Настройка Flow Control для длинных ответов Renault UDS
-      await sendCommand('AT FC SH 740');
-      await sendCommand('AT FC SD 30 00 00');
-      await sendCommand('AT FC SM 1');
+      // Адресация блока SRS (77 - основной адрес Airbag Renault, 81 - заголовок)
+      let targetAddr = '77';
+      log(`Пробуем адрес блока Airbag: ${targetAddr}...`, 'info');
+      await sendCommand(`AT SH 81 ${targetAddr} F1`, 1000);
 
-      await sendCommand('3E 00', 800);
-      let sessionResponse = await sendCommand('10 03', 1200);
-      log(`Сессия UDS (10 03): <span class="info">${sessionResponse.replace(/\r/g, ' ')}</span>`);
+      // Выполняем Fast Init на K-Line
+      log('Выполнение Fast Init (AT FI)...');
+      let initRes = await sendCommand('AT FI', 3500);
+      log(`Ответ Init: <span class="info">${initRes.replace(/\r/g, ' ')}</span>`);
 
-      let checkCAN = await sendCommand('19 02 08', 2000);
-      log(`Ответ CAN: <span class="ok">${checkCAN.replace(/\r/g, ' ')}</span>`);
-
-      if (checkCAN.includes('59 02') || checkCAN.includes('7F 19')) {
-        absResponse = `SESSION: ${sessionResponse} DATA: ${checkCAN}`;
-        log('✅ Успешно по CAN!', 'ok');
-      } 
-      // === Попытка 2: K-Line KWP2000 (Адрес 7B) ===
-      else {
-        log('⚠️ CAN молчит → Переключаемся на K-Line KWP2000', 'info');
-        await sendCommand('AT Z', 1500);
-        await sendCommand('AT SP 4');
-        await sendCommand('AT H1');
-        await sendCommand('AT SH 81 7B F1');
-        await sendCommand('AT FI', 3000);
-
-        let checkKLine = await sendCommand('18 02 FF 00', 3000);
-        log(`Ответ K-Line [7B]: ${checkKLine.replace(/\r/g, ' ')}`);
-
-        if (checkKLine.includes('NO DATA') || checkKLine.includes('?')) {
-          log('Пробуем резервный адрес [F0]...', 'info');
-          await sendCommand('AT SH 81 F0 F1');
-          await sendCommand('AT FI', 3000);
-          checkKLine = await sendCommand('18 02 FF 00', 3000);
-        }
-
-        if (checkKLine.includes('58 02') || checkKLine.includes('7F 18') || checkKLine.length > 10) {
-          absResponse = checkKLine;
-          log('✅ Успешно по K-Line!', 'ok');
+      // Если основной адрес не ответил, пробуем резервные адреса SRS Renault (7A / 7B)
+      if (initRes.includes('BUS INIT: ERROR') || initRes.includes('NO DATA')) {
+        log('Основной адрес 77 молчит, пробуем резервный 7A...', 'info');
+        targetAddr = '7A';
+        await sendCommand(`AT SH 81 ${targetAddr} F1`, 1000);
+        initRes = await sendCommand('AT FI', 3500);
+        
+        if (initRes.includes('BUS INIT: ERROR') || initRes.includes('NO DATA')) {
+          log('Пробуем резервный 7B...', 'info');
+          targetAddr = '7B';
+          await sendCommand(`AT SH 81 ${targetAddr} F1`, 1000);
+          initRes = await sendCommand('AT FI', 3500);
         }
       }
 
-      rawResult = absResponse || checkCAN || 'NO_RESPONSE';
+      // 1. Старт сессии KWP2000 (81)
+      log('Запуск KWP2000 сессии (81)...');
+      await sendCommand('81', 1500);
 
-      if (rawResult.includes('NO DATA') || rawResult.trim() === '>' || rawResult === 'NO_RESPONSE') {
-        showStatus('❌ Блок не ответил. Проверьте зажигание (зажим Start 10 сек)!', 'error');
+      // 2. Чтение DTC ошибок KWP2000 (18 02 FF 00)
+      log('Чтение ошибок KWP2000 (18 02 FF 00)...');
+      const dtcRes = await sendCommand('18 02 FF 00', 3000);
+      log(`DTC Ответ: <span class="ok">${dtcRes.replace(/\r/g, ' ')}</span>`);
+      rawResult = dtcRes.replace(/\r/g, ' ').trim();
+
+      // 3. Чтение живых данных (21 01, 21 02)
+      log('Запрос локальных идентификаторов (21 01)...');
+      const resData1 = await sendCommand('21 01', 1500);
+      
+      log('Запрос локальных идентификаторов (21 02)...');
+      const resData2 = await sendCommand('21 02', 1500);
+
+      // Парсинг выходов
+      const crashStatus = parseKwpCrash(resData1);
+      const beltStatus = parseKwpBelt(resData1);
+      const ohmDriver = parseKwpOhm(resData1);
+      const ohmPass = parseKwpOhm(resData2);
+
+      // Вывод на экран
+      document.getElementById('valCrash').textContent = crashStatus;
+      document.getElementById('valCrash').style.color = crashStatus.includes('CRASH') ? 'var(--red)' : 'var(--green)';
+      document.getElementById('valBelt').textContent = beltStatus;
+      document.getElementById('valOhmDriver').textContent = ohmDriver;
+      document.getElementById('valOhmPass').textContent = ohmPass;
+
+      const stateEl = document.getElementById('srsState');
+      if (rawResult.includes('NO DATA') || rawResult.includes('ERROR')) {
+        stateEl.textContent = '❌ Нет связи с блоком SRS';
+        stateEl.style.color = 'var(--red)';
+        showStatus('❌ Блок не ответил. Проверьте режим зажигания!', 'error');
       } else if (rawResult.includes('7F')) {
-        showStatus('⚠️ Блок отклонил запрос (7F). Зажигание не переведено в сервис.', 'error');
+        stateEl.textContent = '⚠️ Запрос отклонен (7F)';
+        stateEl.style.color = 'var(--yellow)';
+        showStatus('⚠️ Включите сервисный режим зажигания', 'error');
+      } else if (rawResult.includes('58 02') && !rawResult.includes('58 02 00 00')) {
+        stateEl.textContent = '🛑 ОШИБКИ В СИСТЕМЕ SRS';
+        stateEl.style.color = 'var(--red)';
+        showStatus('✅ Данные успешно считаны!', 'sent');
       } else {
+        stateEl.textContent = '✅ Ошибок не найдено';
+        stateEl.style.color = 'var(--green)';
         showStatus('✅ Данные успешно считаны!', 'sent');
       }
+
+      parsedData = {
+        module: 'AIRBAG_SRS_KWP2000',
+        target_address: targetAddr,
+        raw_dtc: rawResult,
+        crash_status: crashStatus,
+        seatbelt_driver: beltStatus,
+        ohm_driver_airbag: ohmDriver,
+        ohm_passenger_airbag: ohmPass
+      };
 
       document.getElementById('sendBtn').disabled = false;
 
@@ -291,35 +407,34 @@
       showStatus('❌ ' + err.message, 'error');
     }
 
-    btn.textContent = '🔌 Повторить опрос ABS';
+    btn.textContent = '🔌 Повторить опрос SRS';
     btn.disabled = false;
   }
 
   async function sendToTelegram() {
     if (!chatId) {
-      showStatus('❌ Ошибка: chat_id не передан', 'error');
+      showStatus('❌ Нет chat_id', 'error');
       return;
     }
     const btn = document.getElementById('sendBtn');
     btn.disabled = true;
-    showStatus('📤 Отправка в Telegram...', 'sending');
-
+    showStatus('📤 Отправка в n8n...', 'sending');
     try {
       const res = await fetch(N8N_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          module: 'AIRBAG_SRS_KWP2000',
+          data: parsedData,
           raw: rawResult,
           chat_id: chatId,
           timestamp: new Date().toISOString()
         })
       });
       if (res.ok) {
-        showStatus('🚀 Отчет отправлен!', 'sent');
-        log('✅ Отправлено в n8n', 'ok');
-      } else {
-        throw new Error(`HTTP ${res.status}`);
-      }
+        showStatus('🚀 Отчет отправлен в Telegram!', 'sent');
+        log('✅ Данные отправлены в n8n', 'ok');
+      } else throw new Error(`HTTP ${res.status}`);
     } catch (err) {
       showStatus('❌ Ошибка отправки', 'error');
       log(`Ошибка HTTP: ${err.message}`, 'err');
