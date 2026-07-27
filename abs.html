@@ -89,8 +89,8 @@
 
 <script>
   const N8N_WEBHOOK_URL = 'https://unlisted-corner-proclaim.ngrok-free.dev/webhook/obd-receiver';
-  const urlParams = new URLSearchParams(window.location.search);
-  const chatId = urlParams.get('chat_id') || '';
+  const urlParams = new URLSearchParams(window.location.search); 
+  const chatId = urlParams.get('chat_id') || ''; // URLSearchParams: Вытягивает chat_id прямо из адресной строки веб-страницы (например, index.html?chat_id=12345). Это нужно, чтобы знать, какому юзеру бота слать ответ.
   document.getElementById('chatTag').textContent = 'chat_id: ' + (chatId || '⚠️ не передан');
 
   const OBD_PROFILES = [
@@ -130,7 +130,7 @@
     }
   }
 
-  function sendCommand(cmd, customTimeout = 3000) {
+  function sendCommand(cmd, customTimeout = 3000) { // Главное, что нужно держать в голове: эта функция берет текстовую команду (например, "AT Z"), превращает её в байты, отправляет в Bluetooth-адаптер и ждет, пока от адаптера не вернется ответ.
     return new Promise((resolve) => {
       responseBuffer = '';
       if (timerId) clearTimeout(timerId);
