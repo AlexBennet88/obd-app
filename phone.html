@@ -1,0 +1,28 @@
+function onGetBluetoothDeviceInfoButtonClick() {
+  let options = {};
+
+  // Формируем фильтры или параметр acceptAllDevices
+  if (isAllDevicesSelected()) {
+    options.acceptAllDevices = true;
+  } else {
+    let filters = getFiltersFromInputs();
+    if (filters.length > 0) {
+      options.filters = filters;
+    }
+  }
+
+  log('Requesting Bluetooth Device...');
+  log('with ' + JSON.stringify(options));
+
+  // 1. Главный запрос на поиск устройства
+  navigator.bluetooth.requestDevice(options)
+  .then(device => {
+    // 2. Устройство выбрано пользователем
+    log('> Name:             ' + device.name);
+    log('> Id:               ' + device.id);
+    log('> Connected:        ' + device.gatt.connected);
+  })
+  .catch(error => {
+    log('Argh! ' + error);
+  });
+}
