@@ -1,21 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Bluetooth Test</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 15px;
+      background: #121212;
+      color: #fff;
+    }
+    input, button {
+      margin-bottom: 10px;
+      padding: 10px;
+      font-size: 16px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      background: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+    /* Блок для логов прямо на экране */
+    #log {
+      margin-top: 15px;
+      padding: 10px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 250px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
 </head>
 <body>
+
   <label><input type="checkbox" id="allDevices" checked> All Devices</label><br><br>
-  <input type="text" id="service" placeholder="Service (e.g. 0x180f)"><br>
-  <input type="text" id="name" placeholder="Device Name"><br>
-  <input type="text" id="namePrefix" placeholder="Name Prefix"><br><br>
-  
+  <input type="text" id="service" placeholder="Service (e.g. 0x180f)">
+  <input type="text" id="name" placeholder="Device Name">
+  <input type="text" id="namePrefix" placeholder="Name Prefix">
+
   <button id="btn">Get Bluetooth Device Info</button>
 
+  <h3>Лог вывода:</h3>
+  <div id="log">Ожидание нажатия кнопки...</div>
+
   <script>
-    // Простая заглушка для логирования
+    // Функция теперь печатает И в console.log, И на экран телефона
     function log(msg) {
       console.log(msg);
+      const logDiv = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `<br>[${time}] ${msg}`;
+      // Автопрокрутка вниз
+      logDiv.scrollTop = logDiv.scrollHeight;
     }
 
     function onButtonClick() {
@@ -46,16 +92,18 @@
         options.filters = filters;
       }
 
-      log('Requesting Bluetooth Device...');
-      log('with ' + JSON.stringify(options));
+      log('Запрос устройства...');
+      log('Параметры: ' + JSON.stringify(options));
+
       navigator.bluetooth.requestDevice(options)
       .then(device => {
-        log('> Name:             ' + device.name);
-        log('> Id:               ' + device.id);
-        log('> Connected:        ' + device.gatt.connected);
+        log('✅ Выбрано устройство:');
+        log('> Name: ' + (device.name || 'Без имени'));
+        log('> Id: ' + device.id);
+        log('> Connected: ' + device.gatt.connected);
       })
       .catch(error => {
-        log('Argh! ' + error);
+        log('❌ Ошибка: ' + error);
       });
     }
 
