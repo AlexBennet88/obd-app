@@ -1,28 +1,65 @@
-function onGetBluetoothDeviceInfoButtonClick() {
-  let options = {};
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Web Bluetooth Test</title>
+</head>
+<body>
+  <label><input type="checkbox" id="allDevices" checked> All Devices</label><br><br>
+  <input type="text" id="service" placeholder="Service (e.g. 0x180f)"><br>
+  <input type="text" id="name" placeholder="Device Name"><br>
+  <input type="text" id="namePrefix" placeholder="Name Prefix"><br><br>
+  
+  <button id="btn">Get Bluetooth Device Info</button>
 
-  // Формируем фильтры или параметр acceptAllDevices
-  if (isAllDevicesSelected()) {
-    options.acceptAllDevices = true;
-  } else {
-    let filters = getFiltersFromInputs();
-    if (filters.length > 0) {
-      options.filters = filters;
+  <script>
+    // Простая заглушка для логирования
+    function log(msg) {
+      console.log(msg);
     }
-  }
 
-  log('Requesting Bluetooth Device...');
-  log('with ' + JSON.stringify(options));
+    function onButtonClick() {
+      let filters = [];
 
-  // 1. Главный запрос на поиск устройства
-  navigator.bluetooth.requestDevice(options)
-  .then(device => {
-    // 2. Устройство выбрано пользователем
-    log('> Name:             ' + device.name);
-    log('> Id:               ' + device.id);
-    log('> Connected:        ' + device.gatt.connected);
-  })
-  .catch(error => {
-    log('Argh! ' + error);
-  });
-}
+      let filterService = document.querySelector('#service').value;
+      if (filterService.startsWith('0x')) {
+        filterService = parseInt(filterService);
+      }
+      if (filterService) {
+        filters.push({services: [filterService]});
+      }
+
+      let filterName = document.querySelector('#name').value;
+      if (filterName) {
+        filters.push({name: filterName});
+      }
+
+      let filterNamePrefix = document.querySelector('#namePrefix').value;
+      if (filterNamePrefix) {
+        filters.push({namePrefix: filterNamePrefix});
+      }
+
+      let options = {};
+      if (document.querySelector('#allDevices').checked) {
+        options.acceptAllDevices = true;
+      } else {
+        options.filters = filters;
+      }
+
+      log('Requesting Bluetooth Device...');
+      log('with ' + JSON.stringify(options));
+      navigator.bluetooth.requestDevice(options)
+      .then(device => {
+        log('> Name:             ' + device.name);
+        log('> Id:               ' + device.id);
+        log('> Connected:        ' + device.gatt.connected);
+      })
+      .catch(error => {
+        log('Argh! ' + error);
+      });
+    }
+
+    document.querySelector('#btn').addEventListener('click', onButtonClick);
+  </script>
+</body>
+</html>
