@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bluetooth Тест</title>
+  <title>BLE Service Scanner</title>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 16px;
       background: #0f172a;
       color: #f8fafc;
     }
@@ -20,20 +20,19 @@
       border-radius: 12px;
       font-size: 16px;
       font-weight: bold;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
     button:active { background: #1d4ed8; }
-    /* Экрана логов вместо консоли */
     #screen-log {
       background: #1e293b;
       border: 1px solid #334155;
       border-radius: 12px;
-      padding: 15px;
+      padding: 14px;
       font-family: monospace;
       font-size: 13px;
       line-height: 1.6;
-      min-height: 200px;
-      max-height: 350px;
+      min-height: 250px;
+      max-height: 450px;
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-all;
@@ -41,18 +40,17 @@
     .ok { color: #4ade80; }
     .err { color: #f87171; }
     .info { color: #38bdf8; }
+    .warn { color: #facc15; }
   </style>
 </head>
 <body>
 
-  <h2>Web Bluetooth Сканер</h2>
-  <button id="btn">🔌 Выбрать устройство</button>
+  <h2>🔍 Сканер BLE Сервисов</h2>
+  <button id="btn">Сканировать наушники</button>
 
-  <p>Результат вывода:</p>
-  <div id="screen-log">Нажми кнопку вверху...</div>
+  <div id="screen-log">Нажмите кнопку для проверки...</div>
 
   <script>
-    // Функция пишет прямо в блок на экране
     function print(text, colorClass = '') {
       const logDiv = document.getElementById('screen-log');
       const time = new Date().toLocaleTimeString('ru');
@@ -61,31 +59,70 @@
       logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    async function startBluetooth() {
-      print('1. Открываю окно поиска...', 'info');
-      
+    // Стандартный UUID батареи в BLE
+    const BATTERY_SERVICE_UUID = '0000180f-0000-1000-8000-00805f9b34fb';
+
+    async function scanServices() {
+      print('1. Поиск устройства...', 'info');
+
       try {
-        // Шаг 1: Поиск устройства
+        // Запрашиваем устройство. 
+        // ВАЖНО: запрашиваем доступ КО ВСЕМ возможным сервисам через optionalServices
         const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true
+          acceptAllDevices: true,
+          optionalServices: [
+            'battery_service', 
+            'device_information',
+            'generic_access'
+          ]
         });
 
-        print(`2. Найдено: ${device.name || 'Устройство без имени'}`, 'ok');
-        print(`> ID устройства: ${device.id}`, 'info');
+        print(`2. Выбрано: ${device.name || 'Без имени'}`, 'ok');
+        print('3. Подключаюсь к GATT...', 'info');
 
-        // Шаг 2: Реальное подключение (GATT)
-        print('3. Подключаюсь к GATT-серверу...', 'info');
         const server = await device.gatt.connect();
+        print('✅ GATT Подключен!', 'ok');
+        print('4. Получаю список всех BLE сервисов...', 'info');
+
+        // Получаем ВСЕ доступные первичные сервисы
+        const services = await server.getPrimaryServices();
+
+        if (services.length === 0) {
+          print('⚠️ Устройство не предоставило ни одного BLE-сервиса!', 'warn');
+          return;
+        }
+
+        print(`Найдено сервисов: ${services.length}`, 'ok');
         
-        print('✅ УСПЕШНО ПОДКЛЮЧЕНО!', 'ok');
-        print(`> Статус связи: ${server.connected}`, 'ok');
+        let hasBatteryService = false;
+
+        for (const service of services) {
+          const uuid = service.uuid;
+          
+          if (uuid === BATTERY_SERVICE_UUID || uuid.includes('180f')) {
+            print(`👉 Сервис: ${uuid} <b class="ok">[БАТАРЕЯ НАЙДЕНА!]</b>`);
+            hasBatteryService = true;
+          } else if (uuid.includes('180a')) {
+            print(`👉 Сервис: ${uuid} (Device Information)`);
+          } else {
+            print(`👉 Сервис: ${uuid}`, 'info');
+          }
+        }
+
+        print('-----------------------------------');
+        if (hasBatteryService) {
+          print('🎉 Твои наушники ПОДДЕРЖИВАЮТ чтение батареи через BLE!', 'ok');
+        } else {
+          print('❌ В этих наушниках НЕТ BLE Battery Service.', 'err');
+          print('Заряд передается исключительно через Bluetooth Classic (HFP/A2DP).', 'warn');
+        }
 
       } catch (error) {
         print(`❌ Ошибка: ${error.message}`, 'err');
       }
     }
 
-    document.getElementById('btn').addEventListener('click', startBluetooth);
+    document.getElementById('btn').addEventListener('click', scanServices);
   </script>
 </body>
 </html>
