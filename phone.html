@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BLE Service Scanner</title>
+  <title>BLE Battery Scanner</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -45,7 +45,7 @@
 </head>
 <body>
 
-  <h2>🔍 Сканер BLE Сервисов</h2>
+  <h2>🔍 Проверка GATT Батареи Havit</h2>
   <button id="btn">Сканировать наушники</button>
 
   <div id="screen-log">Нажмите кнопку для проверки...</div>
@@ -59,22 +59,13 @@
       logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    // Стандартный UUID батареи в BLE
-    const BATTERY_SERVICE_UUID = '0000180f-0000-1000-8000-00805f9b34fb';
-
     async function scanServices() {
       print('1. Поиск устройства...', 'info');
 
       try {
-        // Запрашиваем устройство. 
-        // ВАЖНО: запрашиваем доступ КО ВСЕМ возможным сервисам через optionalServices
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
-          optionalServices: [
-            'battery_service', 
-            'device_information',
-            'generic_access'
-          ]
+          optionalServices: ['battery_service', 'device_information']
         });
 
         print(`2. Выбрано: ${device.name || 'Без имени'}`, 'ok');
@@ -82,43 +73,30 @@
 
         const server = await device.gatt.connect();
         print('✅ GATT Подключен!', 'ok');
-        print('4. Получаю список всех BLE сервисов...', 'info');
-
-        // Получаем ВСЕ доступные первичные сервисы
-        const services = await server.getPrimaryServices();
-
-        if (services.length === 0) {
-          print('⚠️ Устройство не предоставило ни одного BLE-сервиса!', 'warn');
-          return;
-        }
-
-        print(`Найдено сервисов: ${services.length}`, 'ok');
         
-        let hasBatteryService = false;
-
-        for (const service of services) {
-          const uuid = service.uuid;
+        // --- ПРОВЕРКА BATTERY SERVICE ---
+        print('4. Проверяю наличие Battery Service (0x180F)...', 'info');
+        
+        try {
+          const batteryService = await server.getPrimaryService('battery_service');
+          print('👉 Сервис 0x180F найден! <b class="ok">[БАТАРЕЯ ПОДДЕРЖИВАЕТСЯ]</b>');
           
-          if (uuid === BATTERY_SERVICE_UUID || uuid.includes('180f')) {
-            print(`👉 Сервис: ${uuid} <b class="ok">[БАТАРЕЯ НАЙДЕНА!]</b>`);
-            hasBatteryService = true;
-          } else if (uuid.includes('180a')) {
-            print(`👉 Сервис: ${uuid} (Device Information)`);
-          } else {
-            print(`👉 Сервис: ${uuid}`, 'info');
-          }
-        }
+          // Пробуем считать сам процент заряда
+          const char = await batteryService.getCharacteristic('battery_level');
+          const value = await char.readValue();
+          const level = value.getUint8(0);
+          
+          print('-----------------------------------');
+          print(`🎉 Уровень заряда: ${level}%`, 'ok');
 
-        print('-----------------------------------');
-        if (hasBatteryService) {
-          print('🎉 Твои наушники ПОДДЕРЖИВАЮТ чтение батареи через BLE!', 'ok');
-        } else {
-          print('❌ В этих наушниках НЕТ BLE Battery Service.', 'err');
-          print('Заряд передается исключительно через Bluetooth Classic (HFP/A2DP).', 'warn');
+        } catch (e) {
+          print('-----------------------------------');
+          print('❌ В этих наушниках НЕТ стандартного BLE Battery Service.', 'err');
+          print('Заряд передается исключительно через Bluetooth Classic (HFP/A2DP) или скрыт в кастомных сервисах.', 'warn');
         }
 
       } catch (error) {
-        print(`❌ Ошибка: ${error.message}`, 'err');
+        print(`❌ Ошибка подключения: ${error.message}`, 'err');
       }
     }
 
