@@ -3,182 +3,200 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Watch Full Info</title>
+  <title>BLE Time Sync</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       padding: 20px;
       background: #0f172a;
       color: #f8fafc;
-      text-align: center;
+      max-width: 500px;
+      margin: 0 auto;
     }
-    .btn-group {
-      display: flex;
-      gap: 10px;
+    .card {
+      background: #1e293b;
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid #334155;
       margin-bottom: 20px;
     }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+    input[type="datetime-local"] {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #fff;
+      font-size: 16px;
+      box-sizing: border-box;
+      margin-bottom: 16px;
+    }
     button {
-      flex: 1;
-      padding: 16px;
+      width: 100%;
+      padding: 14px;
       border: none;
-      border-radius: 12px;
+      border-radius: 10px;
       font-size: 16px;
       font-weight: bold;
       cursor: pointer;
-    }
-    #connectBtn { background: #3b82f6; color: white; }
-    #connectBtn:active { background: #1d4ed8; }
-    #disconnectBtn { background: #ef4444; color: white; display: none; }
-    #disconnectBtn:active { background: #b91c1c; }
-
-    #battery-display {
-      padding: 20px;
-      background: #1e293b;
-      border-radius: 16px;
-      border: 1px solid #334155;
-      text-align: left;
-    }
-    #level {
-      font-size: 48px;
-      font-weight: bold;
-      color: #4ade80;
-      text-align: center;
       margin-bottom: 10px;
     }
-    .info-row {
-      margin: 8px 0;
-      font-size: 14px;
-      color: #cbd5e1;
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:active { background: #1d4ed8; }
+    .btn-secondary { background: #334155; color: white; }
+    #log {
+      font-family: monospace;
+      font-size: 12px;
+      padding: 12px;
+      background: #090d16;
+      border-radius: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
     }
-    .info-label { font-weight: bold; color: #94a3b8; }
-    #status {
-      margin-top: 15px;
-      font-size: 13px;
-      color: #38bdf8;
-      text-align: center;
-    }
+    .ok { color: #4ade80; }
+    .err { color: #f87171; }
+    .info { color: #38bdf8; }
   </style>
 </head>
 <body>
 
-  <h2>⌚ Полная диагностика часов</h2>
+  <h2>⌚ Установка времени на часах</h2>
 
-  <div class="btn-group">
-    <button id="connectBtn">Подключить</button>
-    <button id="disconnectBtn">Отключить</button>
+  <div class="card">
+    <label for="timePicker">Выберите дату и время:</label>
+    <input type="datetime-local" id="timePicker">
+
+    <button id="setCurrentBtn" class="btn-secondary">Установить текущее время ПК</button>
+    <button id="sendBtn" class="btn-primary">🚀 Отправить на часы</button>
   </div>
 
-  <div id="battery-display">
-    <div id="level">--%</div>
-    
-    <div class="info-row"><span class="info-label">Девайс:</span> <span id="devName">-</span></div>
-    <div class="info-row"><span class="info-label">Производитель:</span> <span id="manufacturer">-</span></div>
-    <div class="info-row"><span class="info-label">Модель:</span> <span id="model">-</span></div>
-    
-    <div id="status">Нажмите кнопку для поиска</div>
+  <div class="card">
+    <label>Лог операций:</label>
+    <div id="log">Готов к работе...</div>
   </div>
 
   <script>
-    let bluetoothDevice = null;
+    const timePicker = document.getElementById('timePicker');
+    const sendBtn = document.getElementById('sendBtn');
+    const setCurrentBtn = document.getElementById('setCurrentBtn');
+    const logEl = document.getElementById('log');
 
-    const connectBtn = document.getElementById('connectBtn');
-    const disconnectBtn = document.getElementById('disconnectBtn');
-    
-    const levelEl = document.getElementById('level');
-    const devNameEl = document.getElementById('devName');
-    const manufacturerEl = document.getElementById('manufacturer');
-    const modelEl = document.getElementById('model');
-    const statusEl = document.getElementById('status');
+    // Устанавливаем текущую дату в инпут по умолчанию
+    function resetToNow() {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      timePicker.value = now.toISOString().slice(0, 16);
+    }
+    resetToNow();
+    setCurrentBtn.addEventListener('click', resetToNow);
 
-    // Вспомогательная функция для декодирования текста (байты -> строка)
-    const decoder = new TextDecoder('utf-8');
+    function print(text, colorClass = '') {
+      const span = colorClass ? `<span class="${colorClass}">${text}</span>` : text;
+      logEl.innerHTML += `<br>${span}`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
 
-    connectBtn.addEventListener('click', async () => {
+    sendBtn.addEventListener('click', async () => {
+      const selectedDate = new Date(timePicker.value);
+      if (isNaN(selectedDate.getTime())) {
+        print('❌ Выберите корректную дату!', 'err');
+        return;
+      }
+
       try {
-        statusEl.innerText = 'Поиск устройств...';
+        print('1. Поиск часов...', 'info');
 
-        // 1. Ищем устройство и запрашиваем 2 сервиса: батарею и инфо
-        bluetoothDevice = await navigator.bluetooth.requestDevice({
+        // Запрашиваем стандартный CTS (0x1805) и популярные кастомные сервисы (FFF0 / 6E40)
+        const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
-          optionalServices: ['battery_service', 'device_information']
+          optionalServices: [
+            'current_time', // Standard CTS (0x1805)
+            '0000fff0-0000-1000-8000-00805f9b34fb',
+            '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
+          ]
         });
 
-        // Слушаем событие неожиданного разрыва связи
-        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        print(`2. Подключение к ${device.name || 'Устройству'}...`, 'info');
+        const server = await device.gatt.connect();
+        print('✅ GATT Подключен!', 'ok');
 
-        statusEl.innerText = `Подключение к GATT...`;
-        const server = await bluetoothDevice.gatt.connect();
+        let sentSuccess = false;
 
-        // -------------------------------------------------------------
-        // 2. ЧИТАЕМ БАТАРЕЮ (0x180F)
-        // -------------------------------------------------------------
+        // --- МЕТОД 1: Пробуем стандартный Current Time Service (0x1805) ---
         try {
-          statusEl.innerText = 'Получение данных батареи...';
-          const batService = await server.getPrimaryService('battery_service');
-          const batChar = await batService.getCharacteristic('battery_level');
-          const batValue = await batChar.readValue();
-          levelEl.innerText = `${batValue.getUint8(0)}%`;
+          const service = await server.getPrimaryService('current_time');
+          const char = await service.getCharacteristic('current_time');
+
+          // Формируем 10 байт по спецификации Bluetooth SIG
+          const buffer = new ArrayBuffer(10);
+          const view = new DataView(buffer);
+
+          view.setUint16(0, selectedDate.getFullYear(), true); // Little-Endian
+          view.setUint8(2, selectedDate.getMonth() + 1);
+          view.setUint8(3, selectedDate.getDate());
+          view.setUint8(4, selectedDate.getHours());
+          view.setUint8(5, selectedDate.getMinutes());
+          view.setUint8(6, selectedDate.getSeconds());
+          view.setUint8(7, selectedDate.getDay() === 0 ? 7 : selectedDate.getDay()); // День недели (1-7)
+          view.setUint8(8, 0); // Fractions256
+          view.setUint8(9, 1); // Adjust Reason
+
+          await char.writeValue(buffer);
+          print('🎉 Время успешно отправлено через стандартный CTS (0x1805)!', 'ok');
+          sentSuccess = true;
         } catch (e) {
-          levelEl.innerText = 'Н/Д';
-          console.warn('Battery Service недоступен:', e);
+          print('ℹ️ Стандартный CTS (0x1805) не найден, пробуем кастомный протокол...', 'info');
         }
 
-        // -------------------------------------------------------------
-        // 3. ЧИТАЕМ ИНФОРМАЦИЮ ОБ УСТРОЙСТВЕ (0x180A)
-        // -------------------------------------------------------------
-        try {
-          statusEl.innerText = 'Считывание информации о железе...';
-          const infoService = await server.getPrimaryService('device_information');
-
-          // Читаем имя производителя (0x2A29)
+        // --- МЕТОД 2: Пробуем кастомный сервисный канал (FFF0 -> FFF2 / FFF1) ---
+        if (!sentSuccess) {
           try {
-            const mfgChar = await infoService.getCharacteristic('manufacturer_name_string');
-            const mfgVal = await mfgChar.readValue();
-            manufacturerEl.innerText = decoder.decode(mfgVal);
-          } catch (e) { manufacturerEl.innerText = 'Не указан'; }
+            const customService = await server.getPrimaryService('0000fff0-0000-1000-8000-00805f9b34fb');
+            
+            // Ищем характеристику для записи (часто fff2 или fff1)
+            let writeChar;
+            try {
+              writeChar = await customService.getCharacteristic('0000fff2-0000-1000-8000-00805f9b34fb');
+            } catch (err) {
+              writeChar = await customService.getCharacteristic('0000fff1-0000-1000-8000-00805f9b34fb');
+            }
 
-          // Читаем номер модели (0x2A24)
-          try {
-            const modelChar = await infoService.getCharacteristic('model_number_string');
-            const modelVal = await modelChar.readValue();
-            modelEl.innerText = decoder.decode(modelVal);
-          } catch (e) { modelEl.innerText = 'Не указан'; }
+            // Формируем распространенный пакет для китайских часов (FitPro style)
+            // Пакет: [Префикс команды, Год-2000, Месяц, День, Час, Мин, Сек]
+            const yearShort = selectedDate.getFullYear() % 100;
+            const payload = new Uint8Array([
+              0xab, 0x00, 0x0b, 0xff, 0x92, 0x80, // Заголовок синхронизации времени
+              yearShort, 
+              selectedDate.getMonth() + 1, 
+              selectedDate.getDate(), 
+              selectedDate.getHours(), 
+              selectedDate.getMinutes(), 
+              selectedDate.getSeconds()
+            ]);
 
-        } catch (e) {
-          console.warn('Device Information Service недоступен:', e);
+            await writeChar.writeValue(payload);
+            print('🎉 Время отправлено через кастомный пакет (0xFFF0)!', 'ok');
+            sentSuccess = true;
+          } catch (e) {
+            print(`❌ Не удалось записать в кастомный сервис: ${e.message}`, 'err');
+          }
         }
 
-        // Успешный итог
-        devNameEl.innerText = bluetoothDevice.name || 'Без имени';
-        statusEl.innerText = '✅ Все данные успешно загружены!';
-        
-        // Переключаем кнопки
-        connectBtn.style.display = 'none';
-        disconnectBtn.style.display = 'block';
+        if (!sentSuccess) {
+          print('⚠️ Устройство подключилось, но не приняло формат времени. Нужен анализ UUID через Explorer.', 'err');
+        }
 
       } catch (error) {
-        statusEl.innerText = `❌ Ошибка: ${error.message}`;
+        print(`❌ Ошибка: ${error.message}`, 'err');
       }
     });
-
-    // Отключение от GATT вручную
-    disconnectBtn.addEventListener('click', () => {
-      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-        bluetoothDevice.gatt.disconnect();
-      }
-    });
-
-    // Хэндлер разрыва связи
-    function onDisconnected() {
-      statusEl.innerText = 'Устройство отключено';
-      levelEl.innerText = '--%';
-      devNameEl.innerText = '-';
-      manufacturerEl.innerText = '-';
-      modelEl.innerText = '-';
-      
-      connectBtn.style.display = 'block';
-      disconnectBtn.style.display = 'none';
-    }
   </script>
 </body>
 </html>
