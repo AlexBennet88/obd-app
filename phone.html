@@ -3,113 +3,82 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Watch UUID Explorer</title>
+  <title>Smart Watch Battery</title>
   <style>
     body {
-      font-family: monospace;
-      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 20px;
       background: #0f172a;
       color: #f8fafc;
+      text-align: center;
     }
     button {
       width: 100%;
       padding: 16px;
-      background: #8b5cf6;
+      background: #3b82f6;
       color: white;
       border: none;
       border-radius: 12px;
-      font-size: 16px;
+      font-size: 18px;
       font-weight: bold;
       cursor: pointer;
-      margin-bottom: 16px;
     }
-    #output {
+    button:active { background: #1d4ed8; }
+    #battery-display {
+      margin-top: 30px;
+      padding: 20px;
       background: #1e293b;
+      border-radius: 16px;
       border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 14px;
-      max-height: 500px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      font-size: 13px;
     }
-    .service-title { color: #38bdf8; font-weight: bold; margin-top: 10px; }
-    .char-item { color: #4ade80; padding-left: 15px; }
-    .writable { color: #facc15; font-weight: bold; }
+    #level {
+      font-size: 48px;
+      font-weight: bold;
+      color: #4ade80;
+    }
+    #status {
+      margin-top: 10px;
+      color: #94a3b8;
+    }
   </style>
 </head>
 <body>
 
-  <h2>🔍 Сканер Ваших Часов</h2>
-  <button id="scanBtn">Сканировать часы</button>
+  <h2>⌚ Заряд смарт-часов</h2>
+  <button id="connectBtn">Подключить часы</button>
 
-  <div id="output">Нажмите кнопку и выберите часы в списке...</div>
+  <div id="battery-display">
+    <div id="level">--%</div>
+    <div id="status">Нажмите кнопку для поиска</div>
+  </div>
 
   <script>
-    const btn = document.getElementById('scanBtn');
-    const out = document.getElementById('output');
-
-    function print(text, className = '') {
-      const div = document.createElement('div');
-      if (className) div.className = className;
-      div.innerText = text;
-      out.appendChild(div);
-      out.scrollTop = out.scrollHeight;
-    }
+    const btn = document.getElementById('connectBtn');
+    const levelEl = document.getElementById('level');
+    const statusEl = document.getElementById('status');
 
     btn.addEventListener('click', async () => {
-      out.innerHTML = '';
       try {
-        print('1. Поиск устройства...');
+        statusEl.innerText = 'Поиск устройств...';
+    
+        // Разрешаем показ любых устройств, но просим доступ к батарее
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
-          optionalServices: [
-            'battery_service',
-            'device_information',
-            'current_time',
-            // Популярные кастомные UUID для часов (FitPro, DaFit, Nordic UART, Telink, Realtek):
-            '0000fff0-0000-1000-8000-00805f9b34fb',
-            '0000ffe0-0000-1000-8000-00805f9b34fb',
-            '0000fee0-0000-1000-8000-00805f9b34fb',
-            '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-            '00001910-0000-1000-8000-00805f9b34fb',
-            '0000a00a-0000-1000-8000-00805f9b34fb'
-          ]
+          optionalServices: ['battery_service', 0x180f]
         });
-
-        print(`2. Подключение к ${device.name || 'Девайсу'}...`);
+    
+        statusEl.innerText = `Подключение к ${device.name || 'Неизвестное устройство'}...`;
+    
         const server = await device.gatt.connect();
-        print('✅ GATT Подключен! Сканируем сервисы...\n');
-
-        const services = await server.getPrimaryServices();
-
-        for (const service of services) {
-          print(`📂 СЕРВИС: ${service.uuid}`, 'service-title');
-          
-          try {
-            const characteristics = await service.getCharacteristics();
-            for (const char of characteristics) {
-              const props = [];
-              if (char.properties.read) props.push('READ');
-              if (char.properties.write) props.push('WRITE');
-              if (char.properties.writeWithoutResponse) props.push('WRITE_NO_RESP');
-              if (char.properties.notify) props.push('NOTIFY');
-
-              const isWritable = char.properties.write || char.properties.writeWithoutResponse;
-              const tag = isWritable ? ' 👈 (СЮДА МОЖНО ПИСАТЬ!)' : '';
-              
-              print(`   📄 Характеристика: ${char.uuid}`, 'char-item');
-              print(`      Права: [${props.join(', ')}]${tag}`, isWritable ? 'writable' : '');
-            }
-          } catch (e) {
-            print(`   ⚠️ Ошибка чтения характеристик: ${e.message}`);
-          }
-        }
-
-        print('\n🎉 Сканирование завершено!');
-
-      } catch (err) {
-        print(`❌ Ошибка: ${err.message}`);
+        const service = await server.getPrimaryService('battery_service');
+        const characteristic = await service.getCharacteristic('battery_level');
+        const value = await characteristic.readValue();
+        
+        levelEl.innerText = `${value.getUint8(0)}%`;
+        statusEl.innerText = `Подключено: ${device.name}`;
+    
+      } catch (error) {
+        statusEl.innerText = `Ошибка: ${error.message}`;
       }
     });
   </script>
