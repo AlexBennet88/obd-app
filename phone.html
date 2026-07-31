@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Watch Battery</title>
+  <title>Smart Watch Battery Monitor</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -11,6 +11,8 @@
       background: #0f172a;
       color: #f8fafc;
       text-align: center;
+      max-width: 400px;
+      margin: 0 auto;
     }
     button {
       width: 100%;
@@ -22,23 +24,28 @@
       font-size: 18px;
       font-weight: bold;
       cursor: pointer;
+      transition: background 0.2s ease;
     }
     button:active { background: #1d4ed8; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+
     #battery-display {
       margin-top: 30px;
-      padding: 20px;
+      padding: 24px;
       background: #1e293b;
       border-radius: 16px;
       border: 1px solid #334155;
     }
     #level {
-      font-size: 48px;
+      font-size: 56px;
       font-weight: bold;
-      color: #4ade80;
+      color: #94a3b8; /* Цвет по умолчанию */
+      transition: color 0.3s ease;
     }
     #status {
       margin-top: 10px;
       color: #94a3b8;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -57,28 +64,71 @@
     const levelEl = document.getElementById('level');
     const statusEl = document.getElementById('status');
 
+    let bluetoothDevice = null;
+
+    // Функция обновления UI в зависимости от % заряда
+    function updateBatteryUI(percentage) {
+      levelEl.innerText = `${percentage}%`;
+
+      if (percentage <= 20) {
+        levelEl.style.color = '#ef4444'; // Красный (низкий)
+      } else if (percentage <= 50) {
+        levelEl.style.color = '#f59e0b'; // Желтый (средний)
+      } else {
+        levelEl.style.color = '#4ade80'; // Зеленый (хороший)
+      }
+    }
+
+    // Обработчик изменения заряда в реальном времени
+    function handleBatteryLevelChanged(event) {
+      const batteryLevel = event.target.value.getUint8(0);
+      updateBatteryUI(batteryLevel);
+    }
+
+    // Обработчик обрыва соединения
+    function onDisconnected() {
+      statusEl.innerText = 'Устройство отключено';
+      levelEl.innerText = '--%';
+      levelEl.style.color = '#94a3b8';
+      btn.disabled = false;
+    }
+
     btn.addEventListener('click', async () => {
       try {
-        statusEl.innerText = 'Поиск устройств...';
-    
-        // Разрешаем показ любых устройств, но просим доступ к батарее
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ['battery_service', 0x180f]
+        statusEl.innerText = 'Поиск устройств с батареей...';
+        btn.disabled = true;
+
+        // Фильтруем устройства: ищем только те, у которых точно есть battery_service
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ services: ['battery_service'] }]
         });
-    
-        statusEl.innerText = `Подключение к ${device.name || 'Неизвестное устройство'}...`;
-    
-        const server = await device.gatt.connect();
+
+        // Слушаем событие отключения
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        statusEl.innerText = `Подключение к ${bluetoothDevice.name || 'Устройству'}...`;
+
+        const server = await bluetoothDevice.gatt.connect();
         const service = await server.getPrimaryService('battery_service');
         const characteristic = await service.getCharacteristic('battery_level');
-        const value = await characteristic.readValue();
-        
-        levelEl.innerText = `${value.getUint8(0)}%`;
-        statusEl.innerText = `Подключено: ${device.name}`;
-    
+
+        // 1. Читаем текущее значение
+        const initialValue = await characteristic.readValue();
+        updateBatteryUI(initialValue.getUint8(0));
+
+        // 2. Подписываемся на изменения заряда в реальном времени
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', handleBatteryLevelChanged);
+
+        statusEl.innerText = `Подключено: ${bluetoothDevice.name || 'Безымянное устройство'}`;
+
       } catch (error) {
-        statusEl.innerText = `Ошибка: ${error.message}`;
+        btn.disabled = false;
+        if (error.name === 'NotFoundError') {
+          statusEl.innerText = 'Поиск отменен пользователем';
+        } else {
+          statusEl.innerText = `Ошибка: ${error.message}`;
+        }
       }
     });
   </script>
