@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Watch Battery</title>
+  <title>Smart Watch Full Info</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -12,75 +12,173 @@
       color: #f8fafc;
       text-align: center;
     }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
     button {
-      width: 100%;
+      flex: 1;
       padding: 16px;
-      background: #3b82f6;
-      color: white;
       border: none;
       border-radius: 12px;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: bold;
       cursor: pointer;
     }
-    button:active { background: #1d4ed8; }
+    #connectBtn { background: #3b82f6; color: white; }
+    #connectBtn:active { background: #1d4ed8; }
+    #disconnectBtn { background: #ef4444; color: white; display: none; }
+    #disconnectBtn:active { background: #b91c1c; }
+
     #battery-display {
-      margin-top: 30px;
       padding: 20px;
       background: #1e293b;
       border-radius: 16px;
       border: 1px solid #334155;
+      text-align: left;
     }
     #level {
       font-size: 48px;
       font-weight: bold;
       color: #4ade80;
+      text-align: center;
+      margin-bottom: 10px;
     }
+    .info-row {
+      margin: 8px 0;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+    .info-label { font-weight: bold; color: #94a3b8; }
     #status {
-      margin-top: 10px;
-      color: #94a3b8;
+      margin-top: 15px;
+      font-size: 13px;
+      color: #38bdf8;
+      text-align: center;
     }
   </style>
 </head>
 <body>
 
-  <h2>⌚ Заряд смарт-часов</h2>
-  <button id="connectBtn">Подключить часы</button>
+  <h2>⌚ Полная диагностика часов</h2>
+
+  <div class="btn-group">
+    <button id="connectBtn">Подключить</button>
+    <button id="disconnectBtn">Отключить</button>
+  </div>
 
   <div id="battery-display">
     <div id="level">--%</div>
+    
+    <div class="info-row"><span class="info-label">Девайс:</span> <span id="devName">-</span></div>
+    <div class="info-row"><span class="info-label">Производитель:</span> <span id="manufacturer">-</span></div>
+    <div class="info-row"><span class="info-label">Модель:</span> <span id="model">-</span></div>
+    
     <div id="status">Нажмите кнопку для поиска</div>
   </div>
 
   <script>
-    const btn = document.getElementById('connectBtn');
+    let bluetoothDevice = null;
+
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    
     const levelEl = document.getElementById('level');
+    const devNameEl = document.getElementById('devName');
+    const manufacturerEl = document.getElementById('manufacturer');
+    const modelEl = document.getElementById('model');
     const statusEl = document.getElementById('status');
 
-    btn.addEventListener('click', async () => {
+    // Вспомогательная функция для декодирования текста (байты -> строка)
+    const decoder = new TextDecoder('utf-8');
+
+    connectBtn.addEventListener('click', async () => {
       try {
         statusEl.innerText = 'Поиск устройств...';
-    
-        // Разрешаем показ любых устройств, но просим доступ к батарее
-        const device = await navigator.bluetooth.requestDevice({
+
+        // 1. Ищем устройство и запрашиваем 2 сервиса: батарею и инфо
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
-          optionalServices: ['battery_service', 0x180f]
+          optionalServices: ['battery_service', 'device_information']
         });
-    
-        statusEl.innerText = `Подключение к ${device.name || 'Неизвестное устройство'}...`;
-    
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService('battery_service');
-        const characteristic = await service.getCharacteristic('battery_level');
-        const value = await characteristic.readValue();
+
+        // Слушаем событие неожиданного разрыва связи
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        statusEl.innerText = `Подключение к GATT...`;
+        const server = await bluetoothDevice.gatt.connect();
+
+        // -------------------------------------------------------------
+        // 2. ЧИТАЕМ БАТАРЕЮ (0x180F)
+        // -------------------------------------------------------------
+        try {
+          statusEl.innerText = 'Получение данных батареи...';
+          const batService = await server.getPrimaryService('battery_service');
+          const batChar = await batService.getCharacteristic('battery_level');
+          const batValue = await batChar.readValue();
+          levelEl.innerText = `${batValue.getUint8(0)}%`;
+        } catch (e) {
+          levelEl.innerText = 'Н/Д';
+          console.warn('Battery Service недоступен:', e);
+        }
+
+        // -------------------------------------------------------------
+        // 3. ЧИТАЕМ ИНФОРМАЦИЮ ОБ УСТРОЙСТВЕ (0x180A)
+        // -------------------------------------------------------------
+        try {
+          statusEl.innerText = 'Считывание информации о железе...';
+          const infoService = await server.getPrimaryService('device_information');
+
+          // Читаем имя производителя (0x2A29)
+          try {
+            const mfgChar = await infoService.getCharacteristic('manufacturer_name_string');
+            const mfgVal = await mfgChar.readValue();
+            manufacturerEl.innerText = decoder.decode(mfgVal);
+          } catch (e) { manufacturerEl.innerText = 'Не указан'; }
+
+          // Читаем номер модели (0x2A24)
+          try {
+            const modelChar = await infoService.getCharacteristic('model_number_string');
+            const modelVal = await modelChar.readValue();
+            modelEl.innerText = decoder.decode(modelVal);
+          } catch (e) { modelEl.innerText = 'Не указан'; }
+
+        } catch (e) {
+          console.warn('Device Information Service недоступен:', e);
+        }
+
+        // Успешный итог
+        devNameEl.innerText = bluetoothDevice.name || 'Без имени';
+        statusEl.innerText = '✅ Все данные успешно загружены!';
         
-        levelEl.innerText = `${value.getUint8(0)}%`;
-        statusEl.innerText = `Подключено: ${device.name}`;
-    
+        // Переключаем кнопки
+        connectBtn.style.display = 'none';
+        disconnectBtn.style.display = 'block';
+
       } catch (error) {
-        statusEl.innerText = `Ошибка: ${error.message}`;
+        statusEl.innerText = `❌ Ошибка: ${error.message}`;
       }
     });
+
+    // Отключение от GATT вручную
+    disconnectBtn.addEventListener('click', () => {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+      }
+    });
+
+    // Хэндлер разрыва связи
+    function onDisconnected() {
+      statusEl.innerText = 'Устройство отключено';
+      levelEl.innerText = '--%';
+      devNameEl.innerText = '-';
+      manufacturerEl.innerText = '-';
+      modelEl.innerText = '-';
+      
+      connectBtn.style.display = 'block';
+      disconnectBtn.style.display = 'none';
+    }
   </script>
 </body>
 </html>
