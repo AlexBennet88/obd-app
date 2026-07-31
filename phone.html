@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BLE Battery Scanner</title>
+  <title>Smart Watch Battery</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      padding: 16px;
+      padding: 20px;
       background: #0f172a;
       color: #f8fafc;
+      text-align: center;
     }
     button {
       width: 100%;
@@ -18,89 +19,74 @@
       color: white;
       border: none;
       border-radius: 12px;
-      font-size: 16px;
+      font-size: 18px;
       font-weight: bold;
-      margin-bottom: 16px;
+      cursor: pointer;
     }
     button:active { background: #1d4ed8; }
-    #screen-log {
+    #battery-display {
+      margin-top: 30px;
+      padding: 20px;
       background: #1e293b;
+      border-radius: 16px;
       border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 14px;
-      font-family: monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      min-height: 250px;
-      max-height: 450px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
     }
-    .ok { color: #4ade80; }
-    .err { color: #f87171; }
-    .info { color: #38bdf8; }
-    .warn { color: #facc15; }
+    #level {
+      font-size: 48px;
+      font-weight: bold;
+      color: #4ade80;
+    }
+    #status {
+      margin-top: 10px;
+      color: #94a3b8;
+    }
   </style>
 </head>
 <body>
 
-  <h2>🔍 Проверка GATT Батареи Havit</h2>
-  <button id="btn">Сканировать наушники</button>
+  <h2>⌚ Заряд смарт-часов</h2>
+  <button id="connectBtn">Подключить часы</button>
 
-  <div id="screen-log">Нажмите кнопку для проверки...</div>
+  <div id="battery-display">
+    <div id="level">--%</div>
+    <div id="status">Нажмите кнопку для поиска</div>
+  </div>
 
   <script>
-    function print(text, colorClass = '') {
-      const logDiv = document.getElementById('screen-log');
-      const time = new Date().toLocaleTimeString('ru');
-      const span = colorClass ? `<span class="${colorClass}">${text}</span>` : text;
-      logDiv.innerHTML += `<br>[${time}] ${span}`;
-      logDiv.scrollTop = logDiv.scrollHeight;
-    }
+    const btn = document.getElementById('connectBtn');
+    const levelEl = document.getElementById('level');
+    const statusEl = document.getElementById('status');
 
-    async function scanServices() {
-      print('1. Поиск устройства...', 'info');
-
+    btn.addEventListener('click', async () => {
       try {
+        statusEl.innerText = 'Поиск часов...';
+
+        // 1. Ищем устройство
         const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ['battery_service', 'device_information']
+          filters: [{ services: ['battery_service'] }]
         });
 
-        print(`2. Выбрано: ${device.name || 'Без имени'}`, 'ok');
-        print('3. Подключаюсь к GATT...', 'info');
+        statusEl.innerText = `Подключение к ${device.name}...`;
 
+        // 2. Подключаемся к GATT
         const server = await device.gatt.connect();
-        print('✅ GATT Подключен!', 'ok');
-        
-        // --- ПРОВЕРКА BATTERY SERVICE ---
-        print('4. Проверяю наличие Battery Service (0x180F)...', 'info');
-        
-        try {
-          const batteryService = await server.getPrimaryService('battery_service');
-          print('👉 Сервис 0x180F найден! <b class="ok">[БАТАРЕЯ ПОДДЕРЖИВАЕТСЯ]</b>');
-          
-          // Пробуем считать сам процент заряда
-          const char = await batteryService.getCharacteristic('battery_level');
-          const value = await char.readValue();
-          const level = value.getUint8(0);
-          
-          print('-----------------------------------');
-          print(`🎉 Уровень заряда: ${level}%`, 'ok');
 
-        } catch (e) {
-          print('-----------------------------------');
-          print('❌ В этих наушниках НЕТ стандартного BLE Battery Service.', 'err');
-          print('Заряд передается исключительно через Bluetooth Classic (HFP/A2DP) или скрыт в кастомных сервисах.', 'warn');
-        }
+        // 3. Получаем сервис и характеристику
+        const service = await server.getPrimaryService('battery_service');
+        const characteristic = await service.getCharacteristic('battery_level');
+
+        // 4. Считываем значение
+        const value = await characteristic.readValue();
+        const batteryPercent = value.getUint8(0);
+
+        // 5. Выводим результат
+        levelEl.innerText = `${batteryPercent}%`;
+        statusEl.innerText = `Часы: ${device.name}`;
 
       } catch (error) {
-        print(`❌ Ошибка подключения: ${error.message}`, 'err');
+        statusEl.innerText = `Ошибка: ${error.message}`;
       }
-    }
-
-    document.getElementById('btn').addEventListener('click', scanServices);
+    });
   </script>
 </body>
 </html>
