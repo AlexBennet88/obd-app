@@ -63,7 +63,8 @@
 
         // 1. Ищем устройство
         const device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: ['battery_service'] }]
+          acceptAllDevices: true,
+          optionalServices: ['battery_service', 0x180f]
         });
 
         statusEl.innerText = `Подключение к ${device.name}...`;
