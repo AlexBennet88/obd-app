@@ -3,198 +3,107 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BLE Time Sync</title>
+  <title>Watch UUID Explorer</title>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      padding: 20px;
+      font-family: monospace;
+      padding: 16px;
       background: #0f172a;
       color: #f8fafc;
-      max-width: 500px;
-      margin: 0 auto;
-    }
-    .card {
-      background: #1e293b;
-      padding: 20px;
-      border-radius: 16px;
-      border: 1px solid #334155;
-      margin-bottom: 20px;
-    }
-    label {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 14px;
-      color: #94a3b8;
-    }
-    input[type="datetime-local"] {
-      width: 100%;
-      padding: 12px;
-      border-radius: 8px;
-      border: 1px solid #475569;
-      background: #0f172a;
-      color: #fff;
-      font-size: 16px;
-      box-sizing: border-box;
-      margin-bottom: 16px;
     }
     button {
       width: 100%;
-      padding: 14px;
+      padding: 16px;
+      background: #8b5cf6;
+      color: white;
       border: none;
-      border-radius: 10px;
+      border-radius: 12px;
       font-size: 16px;
       font-weight: bold;
       cursor: pointer;
-      margin-bottom: 10px;
+      margin-bottom: 16px;
     }
-    .btn-primary { background: #3b82f6; color: white; }
-    .btn-primary:active { background: #1d4ed8; }
-    .btn-secondary { background: #334155; color: white; }
-    #log {
-      font-family: monospace;
-      font-size: 12px;
-      padding: 12px;
-      background: #090d16;
-      border-radius: 8px;
-      max-height: 200px;
+    #output {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px;
+      max-height: 500px;
       overflow-y: auto;
       white-space: pre-wrap;
+      font-size: 13px;
     }
-    .ok { color: #4ade80; }
-    .err { color: #f87171; }
-    .info { color: #38bdf8; }
+    .service-title { color: #38bdf8; font-weight: bold; margin-top: 10px; }
+    .char-item { color: #4ade80; padding-left: 15px; }
+    .writable { color: #facc15; font-weight: bold; }
   </style>
 </head>
 <body>
 
-  <h2>⌚ Установка времени на часах</h2>
+  <h2>🔍 Сканер UUID Ваших Часов</h2>
+  <button id="scanBtn">Сканировать часы</button>
 
-  <div class="card">
-    <label for="timePicker">Выберите дату и время:</label>
-    <input type="datetime-local" id="timePicker">
-
-    <button id="setCurrentBtn" class="btn-secondary">Установить текущее время ПК</button>
-    <button id="sendBtn" class="btn-primary">🚀 Отправить на часы</button>
-  </div>
-
-  <div class="card">
-    <label>Лог операций:</label>
-    <div id="log">Готов к работе...</div>
-  </div>
+  <div id="output">Нажмите кнопку и выберите часы в списке...</div>
 
   <script>
-    const timePicker = document.getElementById('timePicker');
-    const sendBtn = document.getElementById('sendBtn');
-    const setCurrentBtn = document.getElementById('setCurrentBtn');
-    const logEl = document.getElementById('log');
+    const btn = document.getElementById('scanBtn');
+    const out = document.getElementById('output');
 
-    // Устанавливаем текущую дату в инпут по умолчанию
-    function resetToNow() {
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      timePicker.value = now.toISOString().slice(0, 16);
-    }
-    resetToNow();
-    setCurrentBtn.addEventListener('click', resetToNow);
-
-    function print(text, colorClass = '') {
-      const span = colorClass ? `<span class="${colorClass}">${text}</span>` : text;
-      logEl.innerHTML += `<br>${span}`;
-      logEl.scrollTop = logEl.scrollHeight;
+    function print(text, className = '') {
+      const div = document.createElement('div');
+      if (className) div.className = className;
+      div.innerText = text;
+      out.appendChild(div);
+      out.scrollTop = out.scrollHeight;
     }
 
-    sendBtn.addEventListener('click', async () => {
-      const selectedDate = new Date(timePicker.value);
-      if (isNaN(selectedDate.getTime())) {
-        print('❌ Выберите корректную дату!', 'err');
-        return;
-      }
-
+    btn.addEventListener('click', async () => {
+      out.innerHTML = '';
       try {
-        print('1. Поиск часов...', 'info');
-
-        // Запрашиваем стандартный CTS (0x1805) и популярные кастомные сервисы (FFF0 / 6E40)
+        print('1. Поиск устройства...');
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: [
-            'current_time', // Standard CTS (0x1805)
-            '0000fff0-0000-1000-8000-00805f9b34fb',
-            '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
+            'battery_service',
+            'device_information',
+            'generic_access',
+            'current_time'
           ]
         });
 
-        print(`2. Подключение к ${device.name || 'Устройству'}...`, 'info');
+        print(`2. Подключение к ${device.name || 'Девайсу'}...`);
         const server = await device.gatt.connect();
-        print('✅ GATT Подключен!', 'ok');
+        print('✅ GATT Подключен! Сканируем сервисы...\n');
 
-        let sentSuccess = false;
+        const services = await server.getPrimaryServices();
 
-        // --- МЕТОД 1: Пробуем стандартный Current Time Service (0x1805) ---
-        try {
-          const service = await server.getPrimaryService('current_time');
-          const char = await service.getCharacteristic('current_time');
-
-          // Формируем 10 байт по спецификации Bluetooth SIG
-          const buffer = new ArrayBuffer(10);
-          const view = new DataView(buffer);
-
-          view.setUint16(0, selectedDate.getFullYear(), true); // Little-Endian
-          view.setUint8(2, selectedDate.getMonth() + 1);
-          view.setUint8(3, selectedDate.getDate());
-          view.setUint8(4, selectedDate.getHours());
-          view.setUint8(5, selectedDate.getMinutes());
-          view.setUint8(6, selectedDate.getSeconds());
-          view.setUint8(7, selectedDate.getDay() === 0 ? 7 : selectedDate.getDay()); // День недели (1-7)
-          view.setUint8(8, 0); // Fractions256
-          view.setUint8(9, 1); // Adjust Reason
-
-          await char.writeValue(buffer);
-          print('🎉 Время успешно отправлено через стандартный CTS (0x1805)!', 'ok');
-          sentSuccess = true;
-        } catch (e) {
-          print('ℹ️ Стандартный CTS (0x1805) не найден, пробуем кастомный протокол...', 'info');
-        }
-
-        // --- МЕТОД 2: Пробуем кастомный сервисный канал (FFF0 -> FFF2 / FFF1) ---
-        if (!sentSuccess) {
+        for (const service of services) {
+          print(`📂 СЕРВИС: ${service.uuid}`, 'service-title');
+          
           try {
-            const customService = await server.getPrimaryService('0000fff0-0000-1000-8000-00805f9b34fb');
-            
-            // Ищем характеристику для записи (часто fff2 или fff1)
-            let writeChar;
-            try {
-              writeChar = await customService.getCharacteristic('0000fff2-0000-1000-8000-00805f9b34fb');
-            } catch (err) {
-              writeChar = await customService.getCharacteristic('0000fff1-0000-1000-8000-00805f9b34fb');
+            const characteristics = await service.getCharacteristics();
+            for (const char of characteristics) {
+              const props = [];
+              if (char.properties.read) props.push('READ');
+              if (char.properties.write) props.push('WRITE');
+              if (char.properties.writeWithoutResponse) props.push('WRITE_NO_RESP');
+              if (char.properties.notify) props.push('NOTIFY');
+
+              const isWritable = char.properties.write || char.properties.writeWithoutResponse;
+              const tag = isWritable ? ' 👈 (СЮДА МОЖНО ПИСАТЬ!)' : '';
+              
+              print(`   📄 Характеристика: ${char.uuid}`, 'char-item');
+              print(`      Права: [${props.join(', ')}]${tag}`, isWritable ? 'writable' : '');
             }
-
-            // Формируем распространенный пакет для китайских часов (FitPro style)
-            // Пакет: [Префикс команды, Год-2000, Месяц, День, Час, Мин, Сек]
-            const yearShort = selectedDate.getFullYear() % 100;
-            const payload = new Uint8Array([
-              0xab, 0x00, 0x0b, 0xff, 0x92, 0x80, // Заголовок синхронизации времени
-              yearShort, 
-              selectedDate.getMonth() + 1, 
-              selectedDate.getDate(), 
-              selectedDate.getHours(), 
-              selectedDate.getMinutes(), 
-              selectedDate.getSeconds()
-            ]);
-
-            await writeChar.writeValue(payload);
-            print('🎉 Время отправлено через кастомный пакет (0xFFF0)!', 'ok');
-            sentSuccess = true;
           } catch (e) {
-            print(`❌ Не удалось записать в кастомный сервис: ${e.message}`, 'err');
+            print(`   ⚠️ Ошибка чтения характеристик: ${e.message}`);
           }
         }
 
-        if (!sentSuccess) {
-          print('⚠️ Устройство подключилось, но не приняло формат времени. Нужен анализ UUID через Explorer.', 'err');
-        }
+        print('\n🎉 Сканирование завершено!');
 
-      } catch (error) {
-        print(`❌ Ошибка: ${error.message}`, 'err');
+      } catch (err) {
+        print(`❌ Ошибка: ${err.message}`);
       }
     });
   </script>
