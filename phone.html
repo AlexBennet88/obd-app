@@ -59,31 +59,24 @@
 
     btn.addEventListener('click', async () => {
       try {
-        statusEl.innerText = 'Поиск часов...';
-
-        // 1. Ищем устройство
+        statusEl.innerText = 'Поиск устройств...';
+    
+        // Разрешаем показ любых устройств, но просим доступ к батарее
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: ['battery_service', 0x180f]
         });
-
-        statusEl.innerText = `Подключение к ${device.name}...`;
-
-        // 2. Подключаемся к GATT
+    
+        statusEl.innerText = `Подключение к ${device.name || 'Неизвестное устройство'}...`;
+    
         const server = await device.gatt.connect();
-
-        // 3. Получаем сервис и характеристику
         const service = await server.getPrimaryService('battery_service');
         const characteristic = await service.getCharacteristic('battery_level');
-
-        // 4. Считываем значение
         const value = await characteristic.readValue();
-        const batteryPercent = value.getUint8(0);
-
-        // 5. Выводим результат
-        levelEl.innerText = `${batteryPercent}%`;
-        statusEl.innerText = `Часы: ${device.name}`;
-
+        
+        levelEl.innerText = `${value.getUint8(0)}%`;
+        statusEl.innerText = `Подключено: ${device.name}`;
+    
       } catch (error) {
         statusEl.innerText = `Ошибка: ${error.message}`;
       }
