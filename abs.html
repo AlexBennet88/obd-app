@@ -90,7 +90,7 @@
 <script>
   const N8N_WEBHOOK_URL = 'https://unlisted-corner-proclaim.ngrok-free.dev/webhook/obd-receiver';
   const urlParams = new URLSearchParams(window.location.search); 
-  const chatId = urlParams.get('chat_id') || ''; // URLSearchParams: Вытягивает chat_id прямо из адресной строки веб-страницы (например, index.html?chat_id=12345). Это нужно, чтобы знать, какому юзеру бота слать ответ.
+  const chatId = urlParams.get('chat_id') || ''; 
   document.getElementById('chatTag').textContent = 'chat_id: ' + (chatId || '⚠️ не передан');
 
   const OBD_PROFILES = [
@@ -130,7 +130,7 @@
     }
   }
 
-  function sendCommand(cmd, customTimeout = 3000) { // Главное, что нужно держать в голове: эта функция берет текстовую команду (например, "AT Z"), превращает её в байты, отправляет в Bluetooth-адаптер и ждет, пока от адаптера не вернется ответ.
+  function sendCommand(cmd, customTimeout = 3000) {
     return new Promise((resolve) => {
       responseBuffer = '';
       if (timerId) clearTimeout(timerId);
@@ -235,31 +235,31 @@
       await sendCommand('AT FC SD 30 00 00');
       await sendCommand('AT FC SM 1');
 
-      // 1. Активируем KWP2000 extended-сессию (10 85)
-      log('Открытие KWP2000 сессии (10 85)...', 'info');
-      let sessionRes = await sendCommand('10 85', 1500);
-      log(`Сессия: ${sessionRes.replace(/\r/g, ' ')}`);
+      log('Открытие сессии (10 C0)...', 'info');
+      let sessionRes = await sendCommand('10 C0', 1500);
 
-      // Резервный старт сессии (10 81), если 10 85 отвергнута
       if (sessionRes.includes('7F')) {
-        log('Сессия 10 85 отклонена, пробуем Start Session (10 81)...', 'info');
-        sessionRes = await sendCommand('10 81', 1500);
-        log(`Сессия (10 81): ${sessionRes.replace(/\r/g, ' ')}`);
+        log('10 C0 отклонена, пробуем 10 85...', 'info');
+        sessionRes = await sendCommand('10 85', 1500);
       }
 
-      // 2. Чтение DTC по KWP2000 over CAN
-      log('Запрос DTC (18 02 FF 00)...', 'info');
-      let canRes = await sendCommand('18 02 FF 00', 2500);
-      log(`Ответ CAN [18 02]: <span class="ok">${canRes.replace(/\r/g, ' ')}</span>`);
+      log('Запрос DTC (18 00 FF 00)...', 'info');
+      let canRes = await sendCommand('18 00 FF 00', 2500);
 
-      // Проверяем наличие ответа (58 02 = успех KWP2000, 7F = отказ блока)
-      const isCanAlive = canRes.includes('58 02') || canRes.includes('5802') || canRes.includes('7F');
+      if (canRes.includes('7F 18 11') || canRes.includes('NO DATA')) {
+        log('18 00 не прошел, пробуем 17 FF 00...', 'info');
+        canRes = await sendCommand('17 FF 00', 2500);
+      }
+
+      log(`Ответ CAN: <span class="ok">${canRes.replace(/\r/g, ' ')}</span>`);
+
+      const isCanAlive = canRes.includes('58 ') || canRes.includes('57 ') || canRes.includes('5800') || canRes.includes('7F');
 
       if (isCanAlive) {
         finalResponse = `SESSION: ${sessionRes} DATA: ${canRes}`;
-        log('✅ Блок ABS ответил по CAN (KWP2000)!', 'ok');
+        log('✅ Блок ABS ответил по CAN!', 'ok');
       } 
-      // === Попытка 2: K-Line (Фоллбэк, если CAN вообще молчит) ===
+      // === Попытка 2: K-Line (Фоллбэк, если CAN молчит) ===
       else {
         log('⚠️ CAN молчит (NO DATA) → Переключаемся на K-Line KWP2000...', 'info');
         await sendCommand('AT Z', 1500);
