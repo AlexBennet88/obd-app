@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Renault ABS & Airbag Диагностика</title>
+  <title>Renault ABS & Engine Диагностика</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,7 +23,7 @@
     .card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 20px; padding: 32px 28px;
-      max-width: 400px; width: 100%;
+      max-width: 420px; width: 100%;
       box-shadow: 0 0 40px rgba(234,179,8,0.05);
     }
     .header { text-align: center; margin-bottom: 24px; }
@@ -36,6 +36,14 @@
       background: rgba(234,179,8,0.1); color: var(--accent2);
       border: 1px solid rgba(234,179,8,0.2);
     }
+    .rpm-display {
+      background: #000; border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; margin-bottom: 16px;
+      text-align: center;
+    }
+    .rpm-value { font-size: 36px; font-weight: 900; color: var(--green); font-family: monospace; }
+    .rpm-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
     .btn {
       display: block; width: 100%; padding: 14px; border: none;
       border-radius: 12px; font-family: 'Inter', sans-serif;
@@ -74,17 +82,22 @@
 <div class="card">
   <div class="header">
     <span class="icon">🛑</span>
-    <h1>Диагностика ABS</h1>
-    <p class="subtitle">Поиск дилерских ошибок тормозной системы Renault Scenic 2</p>
+    <h1>Диагностика Renault</h1>
+    <p class="subtitle">Чтение RPM и дилерский опрос ABS</p>
     <div class="chat-tag" id="chatTag">chat_id: —</div>
   </div>
 
-  <button class="btn btn-primary" id="connectBtn" onclick="connectABS()">🔌 Опросить блок ABS</button>
+  <div class="rpm-display">
+    <div class="rpm-value" id="rpmValue">----</div>
+    <div class="rpm-label">Обороты двигателя (RPM)</div>
+  </div>
+
+  <button class="btn btn-primary" id="connectBtn" onclick="connectAndRun()">🔌 Подключиться и читать OBD</button>
   <button class="btn btn-send" id="sendBtn" onclick="sendToTelegram()" disabled>📤 Отправить отчет в Telegram</button>
 
   <div class="status" id="status"></div>
   <div class="divider"></div>
-  <div class="log" id="log">Инструкция: Вставьте карту, передачу 1, зажмите Start на 10 сек (без педалей).</div>
+  <div class="log" id="log">Инструкция: Включите зажигание или заведите двигатель.</div>
 </div>
 
 <script>
@@ -117,6 +130,26 @@
     const el = document.getElementById('status');
     el.textContent = msg;
     el.className = `status visible ${type}`;
+  }
+
+  // ==================== ВНЕДРЕННАЯ МАТЕМАТИКА RPM ====================
+  function parseRPM(hexString) {
+    // Очищаем от лишних служебных символов и разбиваем по пробелам
+    const cleanStr = hexString.replace(/\r/g, ' ').replace(/\n/g, ' ').trim();
+    const bytes = cleanStr.split(/\s+/);
+
+    // Ищем маркер ответа "41" и "0C"
+    const startIndex = bytes.findIndex((b, idx) => b === '41' && bytes[idx + 1] === '0C');
+    
+    if (startIndex !== -1 && bytes.length >= startIndex + 4) {
+      const byteA = parseInt(bytes[startIndex + 2], 16);
+      const byteB = parseInt(bytes[startIndex + 3], 16);
+      
+      if (!isNaN(byteA) && !isNaN(byteB)) {
+        return Math.round(((byteA * 256) + byteB) / 4);
+      }
+    }
+    return null;
   }
 
   function onCharacteristicValueChanged(e) {
@@ -173,7 +206,6 @@
       log('Связь с ELM установлена!', 'ok');
       await sendCommand('AT Z', 2000);
       await sendCommand('AT E0', 1000);
-      await sendCommand('AT H1', 1000);
       return true;
     } catch (e) {
       log(`Профиль мимо: ${e.message}`, 'err');
@@ -182,7 +214,7 @@
     }
   }
 
-  async function connectABS() {
+  async function connectAndRun() {
     if (!navigator.bluetooth) {
       showStatus('❌ Браузер не поддерживает Bluetooth! Откройте в Chrome или Bluefy.', 'error');
       log('❌ Ошибка: Web Bluetooth недоступен', 'err');
@@ -209,17 +241,32 @@
       }
       if (!connected) {
         showStatus('❌ Не удалось настроить каналы связи BLE', 'error');
-        btn.textContent = '🔌 Опросить блок ABS';
+        btn.textContent = '🔌 Подключиться и читать OBD';
         btn.disabled = false;
         return;
       }
 
-      // ==================== ОПРОС ABS ====================
-      showStatus('📡 Опрос блока ABS...', 'sending');
-      log('🔄 Настройка параметров ELM327...');
-
+      // Инициализация ELM327
+      showStatus('📡 Инициализация адаптера (ATE0)...', 'sending');
       await sendCommand('AT Z', 1500);
-      await sendCommand('AT E0');
+      await sendCommand('AT E0', 1000); // Отключаем эхо
+
+      // ==================== 1. ЗАПРОС ОБОРОТОВ (PID 010C) ====================
+      log('Запрос RPM (Mode 01 PID 0C)...', 'info');
+      const rpmResponse = await sendCommand('010C', 2000);
+      log(`Ответ RPM: <span class="ok">${rpmResponse.replace(/\r/g, ' ')}</span>`);
+      
+      const calculatedRpm = parseRPM(rpmResponse);
+      if (calculatedRpm !== null) {
+        document.getElementById('rpmValue').textContent = calculatedRpm;
+        log(`✅ Обороты двигателя: ${calculatedRpm} RPM`, 'ok');
+      } else {
+        document.getElementById('rpmValue').textContent = 'N/A';
+        log('⚠️ Не удалось разобрать RPM из ответа', 'err');
+      }
+
+      // ==================== 2. ОПРОС ABS ====================
+      showStatus('📡 Опрос блока ABS...', 'sending');
       await sendCommand('AT H1');
       await sendCommand('AT L0');
       await sendCommand('AT AL');
@@ -235,33 +282,25 @@
       await sendCommand('AT FC SD 30 00 00');
       await sendCommand('AT FC SM 1');
 
-      log('Открытие сессии (10 C0)...', 'info');
       let sessionRes = await sendCommand('10 C0', 1500);
-
       if (sessionRes.includes('7F')) {
-        log('10 C0 отклонена, пробуем 10 85...', 'info');
         sessionRes = await sendCommand('10 85', 1500);
       }
 
-      log('Запрос DTC (18 00 FF 00)...', 'info');
       let canRes = await sendCommand('18 00 FF 00', 2500);
-
       if (canRes.includes('7F 18 11') || canRes.includes('NO DATA')) {
-        log('18 00 не прошел, пробуем 17 FF 00...', 'info');
         canRes = await sendCommand('17 FF 00', 2500);
       }
-
-      log(`Ответ CAN: <span class="ok">${canRes.replace(/\r/g, ' ')}</span>`);
 
       const isCanAlive = canRes.includes('58 ') || canRes.includes('57 ') || canRes.includes('5800') || canRes.includes('7F');
 
       if (isCanAlive) {
-        finalResponse = `SESSION: ${sessionRes} DATA: ${canRes}`;
+        finalResponse = `RPM: ${calculatedRpm || 'N/A'} | SESSION: ${sessionRes} DATA: ${canRes}`;
         log('✅ Блок ABS ответил по CAN!', 'ok');
       } 
-      // === Попытка 2: K-Line (Фоллбэк, если CAN молчит) ===
+      // === Попытка 2: K-Line (Фоллбэк) ===
       else {
-        log('⚠️ CAN молчит (NO DATA) → Переключаемся на K-Line KWP2000...', 'info');
+        log('⚠️ CAN молчит → Переключаемся на K-Line KWP2000...', 'info');
         await sendCommand('AT Z', 1500);
         await sendCommand('AT SP 4');
         await sendCommand('AT H1');
@@ -269,27 +308,21 @@
         await sendCommand('AT FI', 3000);
 
         let klineRes = await sendCommand('18 02 FF 00', 3000);
-        log(`Ответ K-Line [7B]: ${klineRes.replace(/\r/g, ' ')}`);
 
         if (klineRes.includes('NO DATA') || klineRes.includes('?')) {
-          log('Пробуем резервный адрес K-Line [F0]...', 'info');
           await sendCommand('AT SH 81 F0 F1');
           await sendCommand('AT FI', 3000);
           klineRes = await sendCommand('18 02 FF 00', 3000);
         }
 
-        finalResponse = klineRes;
+        finalResponse = `RPM: ${calculatedRpm || 'N/A'} | DATA: ${klineRes}`;
       }
 
       rawResult = finalResponse || 'NO_RESPONSE';
 
       // ==================== ОЦЕНКА РЕЗУЛЬТАТА ====================
       if (rawResult.includes('NO DATA') || rawResult === 'NO_RESPONSE') {
-        showStatus('❌ Блок не ответил. Проверьте зажигание (зажим Start 10 сек)!', 'error');
-      } else if (rawResult.includes('7F 18 22') || rawResult.includes('7F 10 22')) {
-        showStatus('⚠️ Зажигание не в сервисе! Вставьте карту, 1-я передача и зажмите Start на 10 сек.', 'error');
-      } else if (rawResult.includes('7F')) {
-        showStatus('⚠️ Блок отклонил запрос (7F). Подробности отправлены в Telegram.', 'error');
+        showStatus('❌ Блок не ответил. Проверьте зажигание!', 'error');
       } else {
         showStatus('✅ Данные успешно считаны!', 'sent');
       }
@@ -301,7 +334,7 @@
       showStatus('❌ ' + err.message, 'error');
     }
 
-    btn.textContent = '🔌 Повторить опрос ABS';
+    btn.textContent = '🔌 Повторить опрос';
     btn.disabled = false;
   }
 
