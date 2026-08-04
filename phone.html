@@ -134,11 +134,9 @@
 
   // ==================== ВНЕДРЕННАЯ МАТЕМАТИКА RPM ====================
   function parseRPM(hexString) {
-    // Очищаем от лишних служебных символов и разбиваем по пробелам
     const cleanStr = hexString.replace(/\r/g, ' ').replace(/\n/g, ' ').trim();
     const bytes = cleanStr.split(/\s+/);
 
-    // Ищем маркер ответа "41" и "0C"
     const startIndex = bytes.findIndex((b, idx) => b === '41' && bytes[idx + 1] === '0C');
     
     if (startIndex !== -1 && bytes.length >= startIndex + 4) {
@@ -155,7 +153,7 @@
   function onCharacteristicValueChanged(e) {
     const text = new TextDecoder().decode(e.target.value);
     responseBuffer += text;
-    if (responseBuffer.trim().endsWith('>') && pendingResolve) {
+    if ((responseBuffer.includes('>') || responseBuffer.includes('\r')) && pendingResolve) {
       const cb = pendingResolve;
       pendingResolve = null;
       if (timerId) clearTimeout(timerId);
@@ -231,7 +229,8 @@
         acceptAllDevices: true,
         optionalServices: OBD_PROFILES.map(p => p.service)
       });
-      log(`Подключено к: <span class="ok">${device.name || 'ELM327 Adapter'}</span>`);
+      
+      log(`Подключено к: <span class="ok">${device.name || 'ELM327 / Эмулятор'}</span>`);
 
       showStatus('🔄 Инициализация профиля Bluetooth...', 'info');
       let connected = false;
@@ -249,7 +248,7 @@
       // Инициализация ELM327
       showStatus('📡 Инициализация адаптера (ATE0)...', 'sending');
       await sendCommand('AT Z', 1500);
-      await sendCommand('AT E0', 1000); // Отключаем эхо
+      await sendCommand('AT E0', 1000);
 
       // ==================== 1. ЗАПРОС ОБОРОТОВ (PID 010C) ====================
       log('Запрос RPM (Mode 01 PID 0C)...', 'info');
@@ -273,7 +272,7 @@
 
       let finalResponse = '';
 
-      // === Попытка 1: CAN bus (ISO 15765-4, 500kbps, ID 740/760) ===
+      // === Попытка 1: CAN bus ===
       log('Попытка 1: CAN bus (ID 740/760)');
       await sendCommand('AT SP 6');
       await sendCommand('AT SH 740');
@@ -298,7 +297,7 @@
         finalResponse = `RPM: ${calculatedRpm || 'N/A'} | SESSION: ${sessionRes} DATA: ${canRes}`;
         log('✅ Блок ABS ответил по CAN!', 'ok');
       } 
-      // === Попытка 2: K-Line (Фоллбэк) ===
+      // === Попытка 2: K-Line ===
       else {
         log('⚠️ CAN молчит → Переключаемся на K-Line KWP2000...', 'info');
         await sendCommand('AT Z', 1500);
@@ -320,7 +319,6 @@
 
       rawResult = finalResponse || 'NO_RESPONSE';
 
-      // ==================== ОЦЕНКА РЕЗУЛЬТАТА ====================
       if (rawResult.includes('NO DATA') || rawResult === 'NO_RESPONSE') {
         showStatus('❌ Блок не ответил. Проверьте зажигание!', 'error');
       } else {
