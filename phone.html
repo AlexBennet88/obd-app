@@ -132,7 +132,6 @@
     el.className = `status visible ${type}`;
   }
 
-  // ==================== ВНЕДРЕННАЯ МАТЕМАТИКА RPM ====================
   function parseRPM(hexString) {
     const cleanStr = hexString.replace(/\r/g, ' ').replace(/\n/g, ' ').trim();
     const bytes = cleanStr.split(/\s+/);
@@ -225,12 +224,19 @@
     log('Поиск Bluetooth устройств...');
 
     try {
+      // КЛЮЧЕВОЙ ИСПРАВЛЕННЫЙ БЛОК ПОИСКА:
+      // Передаем весь спектр сервисов в optionalServices
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: OBD_PROFILES.map(p => p.service)
+        optionalServices: [
+          '0000fff0-0000-1000-8000-00805f9b34fb',
+          '000018f0-0000-1000-8000-00805f9b34fb',
+          'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+          '0000e077-0000-1000-8000-00805f9b34fb'
+        ]
       });
       
-      log(`Подключено к: <span class="ok">${device.name || 'ELM327 / Эмулятор'}</span>`);
+      log(`Выбрано устройство: <span class="ok">${device.name || 'Без имени'}</span>`);
 
       showStatus('🔄 Инициализация профиля Bluetooth...', 'info');
       let connected = false;
@@ -245,12 +251,10 @@
         return;
       }
 
-      // Инициализация ELM327
       showStatus('📡 Инициализация адаптера (ATE0)...', 'sending');
       await sendCommand('AT Z', 1500);
       await sendCommand('AT E0', 1000);
 
-      // ==================== 1. ЗАПРОС ОБОРОТОВ (PID 010C) ====================
       log('Запрос RPM (Mode 01 PID 0C)...', 'info');
       const rpmResponse = await sendCommand('010C', 2000);
       log(`Ответ RPM: <span class="ok">${rpmResponse.replace(/\r/g, ' ')}</span>`);
@@ -264,7 +268,6 @@
         log('⚠️ Не удалось разобрать RPM из ответа', 'err');
       }
 
-      // ==================== 2. ОПРОС ABS ====================
       showStatus('📡 Опрос блока ABS...', 'sending');
       await sendCommand('AT H1');
       await sendCommand('AT L0');
@@ -272,7 +275,6 @@
 
       let finalResponse = '';
 
-      // === Попытка 1: CAN bus ===
       log('Попытка 1: CAN bus (ID 740/760)');
       await sendCommand('AT SP 6');
       await sendCommand('AT SH 740');
@@ -296,9 +298,7 @@
       if (isCanAlive) {
         finalResponse = `RPM: ${calculatedRpm || 'N/A'} | SESSION: ${sessionRes} DATA: ${canRes}`;
         log('✅ Блок ABS ответил по CAN!', 'ok');
-      } 
-      // === Попытка 2: K-Line ===
-      else {
+      } else {
         log('⚠️ CAN молчит → Переключаемся на K-Line KWP2000...', 'info');
         await sendCommand('AT Z', 1500);
         await sendCommand('AT SP 4');
